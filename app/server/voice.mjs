@@ -331,6 +331,81 @@ export function edgeVoice({ dir, voiceId = EDGE_VOICES[0].id, rate = '+0%', pitc
   return { say, pcm, warm, voiceId, provider: 'edge', get used() { return used; }, dailyChars };
 }
 
+// Google Translate TTS: free, no key, speaks Vietnamese. It is ONLY a fallback
+// for when Edge's cloud drops the connection (close 1006 on this network) —
+// the room must never go silent just because one provider is unreachable.
+// One GET per chunk (the endpoint caps a request near 200 chars); the mp3
+// frames are concatenated, which browsers play as one file. Verified live
+// 2026-11-21: 200 + valid 64 kbps mp3 for a Vietnamese line.
+export const GOOGLE_TTS_URL = 'https://translate.google.com/translate_tts';
+export function googleVoice({ dir, googleUrl = GOOGLE_TTS_URL, fetchImpl = fetch, execImpl = null, dailyChars = 1000000, timeoutMs = 15000, now = () => Date.now(), keepFiles = 300, status }) {
+  fs.mkdirSync(dir, { recursive: true });
+  let day = '', used = 0;
+  const today = () => new Date(now() + 8 * 3600e3).toISOString().slice(0, 10);
+  const room = text => { if (today() !== day) { day = today(); used = 0; } return used + text.length <= dailyChars; };
+  function chunks(text) {
+    const parts = [];
+    for (const sentence of String(text).split(/(?<=[.!?…:])\s+/)) {
+      if (!sentence) continue;
+      if (sentence.length <= 180) { parts.push(sentence); continue; }
+      let cur = '';
+      for (const w of sentence.split(/\s+/)) {
+        if ((cur + ' ' + w).trim().length > 180 && cur) { parts.push(cur.trim()); cur = w; }
+        else cur = (cur + ' ' + w).trim();
+      }
+      if (cur) parts.push(cur);
+    }
+    return parts.length ? parts : [String(text)];
+  }
+  async function fetchChunk(part) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const r = await fetchImpl(`${googleUrl}?ie=UTF-8&tl=vi&client=tw-ob&q=${encodeURIComponent(part)}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36' }, signal: ctrl.signal });
+      if (!r.ok) return null;
+      const buf = Buffer.from(await r.arrayBuffer());
+      return buf.length > 100 ? buf : null;
+    } catch { return null; } finally { clearTimeout(timer); }
+  }
+  async function fetchMp3(text) {
+    if (!room(text)) { status?.('voice', false, 'daily cap reached'); return null; }
+    const bufs = [];
+    for (const part of chunks(text)) {
+      const b = await fetchChunk(part);
+      if (!b) return null;
+      bufs.push(b);
+    }
+    used += text.length;
+    return Buffer.concat(bufs);
+  }
+  function prune() {
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.mp3')).map(f => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t);
+    for (const { f } of files.slice(keepFiles)) fs.rmSync(path.join(dir, f), { force: true });
+  }
+  async function say(text, face, id) {
+    const mp3 = await fetchMp3(text);
+    if (!mp3) return null;
+    const file = `${id}.mp3`;
+    fs.writeFileSync(path.join(dir, file), mp3);
+    prune();
+    status?.('voice', true);
+    console.log('voice fallback: google tts');
+    return { url: `/audio/${file}`, durationMs: Math.round(mp3.length / 8) };   // 64 kbps: 8 bytes per ms
+  }
+  // mp3 to raw 24 kHz mono PCM for the Vidu component avatar, through ffmpeg.
+  const decode = execImpl || (buf => new Promise((resolve, reject) => {
+    const child = execFile('ffmpeg', ['-v', 'error', '-i', 'pipe:0', '-f', 's16le', '-ar', '24000', '-ac', '1', 'pipe:1'], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => err ? reject(err) : resolve(stdout));
+    child.stdin.on('error', () => {});
+    child.stdin.end(buf);
+  }));
+  async function pcm(text) {
+    const mp3 = await fetchMp3(text);
+    if (!mp3) return null;
+    return decode(mp3).catch(() => null);
+  }
+  return { say, pcm, provider: 'google', get used() { return used; }, dailyChars };
+}
+
 // A fetch response's body line by line as it arrives; a response without a readable body is read whole.
 async function* lines(r) {
   if (!r.body) { yield* (await r.text()).split('\n'); return; }

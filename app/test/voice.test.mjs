@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { falVoice, doubaoVoice, edgeVoice, edgeVoiceId, spokenLang, EDGE_TTS_URL } from '../server/voice.mjs';
+import { falVoice, doubaoVoice, edgeVoice, googleVoice, edgeVoiceId, spokenLang, EDGE_TTS_URL } from '../server/voice.mjs';
 import { WebSocketServer } from 'ws';
 
 test('a failed voice request is retried once with the picked voice and full quality', async () => {
@@ -297,4 +297,79 @@ test('Edge TTS: a proxy env var is honored (agent passed to the socket), ws:// f
     assert.equal(seen.agent, undefined);
   } finally { await fake.close(); }
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Google TTS fallback: chunks a long line, writes one mp3, and fails cleanly on a 403', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-google-'));
+  const urls = [];
+  const fetchImpl = async url => {
+    urls.push(url);
+    return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array(800).buffer };
+  };
+  const v = googleVoice({ dir, fetchImpl });
+  const out = await v.say('Xin chào bạn, tôi là Vy. ' + 'Hôm nay mình nói chuyện phim ngắn nhé. '.repeat(12), 'smile', 'g1');
+  assert.equal(out.url, '/audio/g1.mp3');
+  assert.equal(out.durationMs, urls.length * 100); // 800 bytes per chunk at 64 kbps: 8 bytes per ms
+  assert.ok(urls.length >= 3, `expected several chunks, got ${urls.length}`);
+  for (const u of urls) {
+    assert.match(u, /^https:\/\/translate\.google\.com\/translate_tts\?ie=UTF-8&tl=vi&client=tw-ob&q=/);
+    assert.ok(decodeURIComponent(u.split('q=')[1]).length <= 180, 'chunk too long for the endpoint');
+  }
+  assert.equal(fs.readFileSync(path.join(dir, 'g1.mp3')).length, urls.length * 800);
+  const bad = googleVoice({ dir, fetchImpl: async () => ({ ok: false, status: 403, arrayBuffer: async () => new ArrayBuffer(0) }) });
+  assert.equal(await bad.say('hi', 'smile', 'g2'), null);
+  assert.equal(fs.existsSync(path.join(dir, 'g2.mp3')), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Edge fails, Google fallback speaks: a chat reply still comes back with audio', async () => {
+  const { start } = await import('../server/index.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-google-e2e-'));
+  // Edge dies at once: the fake server closes every socket before any audio.
+  const dead = new WebSocketServer({ port: 0 });
+  dead.on('connection', ws => ws.close());
+  await new Promise(r => dead.on('listening', r));
+  const deadUrl = `ws://127.0.0.1:${dead.address().port}`;
+  // Google stub: a fixed mp3 for every request, so the fallback is provable.
+  const google = http.createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'audio/mpeg' }); res.end(Buffer.alloc(800)); });
+  await new Promise(r => google.listen(0, '127.0.0.1', r));
+  const googleUrl = `http://127.0.0.1:${google.address().port}/translate_tts`;
+  const stub = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'A, hi đấy mà!' } }] })); });
+  });
+  await new Promise(r => stub.listen(0, '127.0.0.1', r));
+  const stubPort = stub.address().port;
+  const app = await start({ IDOL: 'viet', MODE: 'test', DATA_DIR: dir, AVATAR: 'mock', VOICE_PROVIDER: 'edge', EDGE_TTS_URL: deadUrl, GOOGLE_TTS_URL: googleUrl });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  try {
+    let r = await fetch(`${base}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'custom', keys: { custom: 'test-key' }, bases: { custom: `http://127.0.0.1:${stubPort}` }, models: { custom: 'test-model' } }) });
+    assert.equal(r.status, 200);
+    const stream = await fetch(`${base}/api/stream`);
+    assert.equal(stream.status, 200);
+    r = await fetch(`${base}/api/guest`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'kakap' }) });
+    const { token } = await r.json();
+    r = await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, text: 'hi' }) });
+    assert.equal(r.status, 200);
+    let audio = null, seen = '';
+    for (let i = 0; i < 60 && !audio; i++) {
+      await new Promise(r => setTimeout(r, 250));
+      const st = await (await fetch(`${base}/api/state`)).json();
+      seen = st.line?.text || seen;
+      if (st.line?.audio && (st.line.text || '').includes('hi đấy')) audio = st.line.audio;
+    }
+    assert.ok(audio, `no spoken chat reply (last line: ${seen})`);
+    r = await fetch(`${base}${audio}`);
+    assert.equal(r.status, 200);
+    assert.equal((await r.arrayBuffer()).byteLength, 800);
+    await stream.body.cancel();
+  } finally {
+    await app.shutdown();
+    stub.close();
+    google.close();
+    dead.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

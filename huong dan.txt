@@ -1,7 +1,22 @@
-HUONG DAN - OPEN LIVESTREAM v7.9.2
+HUONG DAN - OPEN LIVESTREAM v7.9.3
 ==============================
 
-v7.9.2 CO TIENG NGAY CA KHI EDGE BI CHAN (giong du phong) + SUA 2 DIEM NOI EDGE:
+v7.9.3 GIONG DU PHONG PHIA SERVER (CO TIENG NGAY CA KHI EDGE CHET HAN):
+Ban 7.9.2 van bao "voice failed: edge tts closed early (code 1006: )"
+— Microsoft van dong ket noi tren mang cua ban. Giong du phong o
+trinh duyet (v7.9.2) cung khong cuu duoc neu Windows chua cai giong
+tieng Viet. Nen v7.9.3 them giong du phong PHIA SERVER: khi Edge
+that bai, server tu goi Google Translate TTS (mien phi, khong can
+key, noi tieng Viet) de doc cau tra loi — am thanh ve theo dung
+duong /audio/ cu nen phong cu phat nhu thuong, khong phu thuoc
+trinh duyet hay Windows nua. Khi giong du phong noi, cua so den
+in dong "voice fallback: google tts". Giong Google khong hay bang
+Hoai My nhung nghe ro va co tieng ngay.
+Cap nhat nhu cu (tat server cu, chay Chay-Live.bat 1 lan, mo lai
+phong), chat "hi" 1 cau roi nghe. Neu van im lang thi gui anh cua
+so den cho minh.
+
+v7.9.2 GIONG DU PHONG O TRINH DUYET + NOI EDGE QUA PROXY:
 Ban 7.9.1 bao loi "closed early (code 1006: )" — nghia la Microsoft
 nhan duoc yeu cau roi tu dong ket noi ma khong bao ly do (1006 = dong
 bat thuong, khong co ban tin dong). Dong ho may ban dung gio (7:26 PM

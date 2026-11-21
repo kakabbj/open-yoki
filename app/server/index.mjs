@@ -30,7 +30,7 @@ import { createTown, townAllowed } from './town.mjs';
 import { createRelay } from './relay.mjs';
 import { createVolcRoom } from './rtc.mjs';
 import { createSchedule, clockIn, showCue } from './schedule.mjs';
-import { falVoice, doubaoVoice, edgeVoice, edgeVoiceId, plainText, saidPart, VOICE, doubaoResource } from './voice.mjs';
+import { falVoice, doubaoVoice, edgeVoice, googleVoice, edgeVoiceId, plainText, saidPart, VOICE, doubaoResource } from './voice.mjs';
 import { createAuth, AuthError, isGuest } from './auth.mjs';
 import { liveRoom, watchGate } from './live.mjs';
 import { createMemory } from './memory.mjs';
@@ -150,7 +150,17 @@ export async function start(env = process.env) {
   // No voice engine at all (old builds had none without a key): the room must say off,
   // not ok — 'ok' with no engine is what hid the old-server-still-running case in v7.8.
   routes.voice.on = !!stageVoice;
-  const voice = stageVoice;
+  // Edge's cloud drops the connection on this network (close 1006); when it
+  // fails, Google Translate TTS (free, no key) speaks the line instead so the
+  // room is never silent. The fallback only runs after Edge has failed, and
+  // the server log shows 'voice fallback: google tts' when it speaks.
+  let voice = stageVoice;
+  if (useEdge && stageVoice) {
+    const google = googleVoice({ dir: voiceDir, dailyChars, googleUrl: env.GOOGLE_TTS_URL || undefined, status });
+    const edgeSay = stageVoice.say.bind(stageVoice);
+    const edgePcm = stageVoice.pcm.bind(stageVoice);
+    voice = { ...stageVoice, say: async (...a) => (await edgeSay(...a)) || (await google.say(...a)), pcm: async (...a) => (await edgePcm(...a).catch(() => null)) || (await google.pcm(...a).catch(() => null)) };
+  }
   // With a DeepSeek key the mouth talks to DeepSeek directly (thinking off, MOUTH_DS model) and reads a page of facts
   // (brain.mjs factFor, idol.mouth.direct); the chosen provider backs it up. MOUTH_DIRECT=0 uses the chosen provider only.
   const mouthDirect = !!keyStore.keyFor('deepseek') && env.MOUTH_DIRECT !== '0' && !!idol.mouth?.direct;
