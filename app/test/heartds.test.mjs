@@ -77,8 +77,12 @@ test('ds heart: resume carries the talk under this beat\'s system; old tool resu
 
 test('ds heart: nothing outside her home, and only notes get written', async () => {
   const { root, h, sd } = setup(), bodies = [];
-  fs.symlinkSync(root, path.join(h, 'out'));
-  fs.symlinkSync(path.join(root, 'nothing-yet.md'), path.join(h, 'dangling.md'));
+  // Windows needs privilege (admin / Developer Mode) to make a real symlink, so
+  // the test would die with EPERM there; a junction does the same job — the
+  // guard resolves it out of her home — and needs no privilege.
+  const link = process.platform === 'win32' ? 'junction' : undefined;
+  fs.symlinkSync(root, path.join(h, 'out'), link);
+  fs.symlinkSync(path.join(root, 'nothing-yet.md'), path.join(h, 'dangling.md'), link);
   const tries = [call('read_file', { path: '../secret.md' }, 't1'), call('read_file', { path: '/etc/passwd' }, 't2'), call('read_file', { path: 'out/secret.md' }, 't3'),
     call('write_file', { path: 'out/new.md', content: 'x' }, 't4'), call('write_file', { path: 'run.sh', content: 'rm -rf /' }, 't5'), call('list_dir', { path: '..' }, 't6'),
     call('write_file', { path: 'dangling.md', content: 'x' }, 't7'), call('append_file', { path: '../secret.md', content: 'x' }, 't8'), call('edit_file', { path: '../secret.md', old: 'outside', new: 'x' }, 't9')];

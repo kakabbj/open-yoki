@@ -185,9 +185,14 @@ test('her day in the note wears out like any other thought', () => {
 // A relay first, Anthropic behind it; a failed relay never stops her heart.
 test('heart relay: a bearer-token relay runner sends its own key var to its own base, falls back on failure', async () => {
   const { fallbackRunner } = await import('../server/heart.mjs');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'heart-relay-')), bin = path.join(dir, 'claude');
-  fs.writeFileSync(bin, `#!/bin/sh\ncat > /dev/null\nenv > "${dir}/env"\necho '{"session_id":"X","result":"ok","total_cost_usd":0.01}'\n`);
-  fs.chmodSync(bin, 0o755);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'heart-relay-'));
+  // Windows cannot run an extensionless #!/bin/sh script (spawn ENOENT), so the
+  // fake is a .cmd there: Node spawns .cmd files via cmd.exe, and `set` dumps the
+  // env in the same NAME=value lines the test asserts on.
+  const win = process.platform === 'win32';
+  const bin = path.join(dir, win ? 'claude.cmd' : 'claude');
+  if (win) fs.writeFileSync(bin, `@echo off\r\nset > "${dir}\\env"\r\necho {"session_id":"X","result":"ok","total_cost_usd":0.01}\r\n`);
+  else { fs.writeFileSync(bin, `#!/bin/sh\ncat > /dev/null\nenv > "${dir}/env"\necho '{"session_id":"X","result":"ok","total_cost_usd":0.01}'\n`); fs.chmodSync(bin, 0o755); }
   const relay = claudeRunner({ key: 'r-test', keyVar: 'ANTHROPIC_AUTH_TOKEN', baseUrl: 'https://relay.example.com', model: 'claude-sonnet-5-5', configDir: path.join(dir, 'cfg'), bin });
   const j = await fallbackRunner([['relay', relay]])({ cwd: dir, system: 'S', message: 'm' });
   assert.equal(j.via, 'relay'); assert.equal(j.result, 'ok');

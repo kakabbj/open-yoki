@@ -4,6 +4,7 @@
 // telling her viewers tonight: a new narrative, a new word or meme, something a big name said. She brings them up when
 // the room is quiet. Stored in <DATA_DIR>/learned.json.
 import fs from 'node:fs';
+import path from 'node:path';
 
 const SEARCH = 'https://api.x.com/2/tweets/search/recent';
 const POLITICS = /政治|总统|选举|制裁|战争|关税|特朗普|川普|拜登|普京|习近平|中国政府|台湾|以色列|伊朗|乌克兰|俄罗斯/;
@@ -118,7 +119,10 @@ export function createXLearn({ file, bearer, accounts = [], talk = TALK, ask, on
         const a = await ask(pushPrompt(mine, known, new Date(now() + 8 * 3600e3).toISOString().slice(0, 10)), { long: true });
         const list = parsePushes(a.text, now());
         if (list.length) {
-          try { fs.mkdirSync(pushFile.replace(/\/[^/]+$/, ''), { recursive: true }); fs.writeFileSync(pushFile + '.tmp', pushesMd(list, now())); fs.renameSync(pushFile + '.tmp', pushFile); }
+          // path.dirname, not a /-only regex: on Windows the path has \ separators, the old regex
+          // matched nothing, mkdirSync made a DIRECTORY called 官方最近在推.md, and the
+          // write+rename then failed silently (EISDIR when the test read it back).
+          try { fs.mkdirSync(path.dirname(pushFile), { recursive: true }); fs.writeFileSync(pushFile + '.tmp', pushesMd(list, now())); fs.renameSync(pushFile + '.tmp', pushFile); }
           catch (e) { log('pushes save failed ' + e.message); }
         }
         log(`x learn: ${mine.length} official posts, pushes list ${list.length}`);
