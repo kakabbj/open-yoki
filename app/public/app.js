@@ -364,6 +364,12 @@ function fillProvider() {
   $('setModel').placeholder = p.model || t('留空用默认模型');
   $('setKey').value = '';
   $('setKey').placeholder = p.configured ? t('已保存 key') : t('还没保存 key');
+  // OpenCode (v7): no key of its own — hide the key row and the delete button, show the
+  // bridge note instead. The key lives in OpenCode; the panel never asks for it.
+  const isOC = id === 'opencode';
+  $('setKey').closest('label').hidden = isOC;
+  $('setDel').hidden = isOC;
+  $('setOpencodeNote').hidden = !isOC;
   const active = providerOf(settingsCache.provider);
   $('setStatus').textContent = settingsCache.modelOn && active ? `${t('正在用')} ${active.name} · ${active.model}` : t('还没接 key，模型是关的');
 }
@@ -377,6 +383,7 @@ async function loadSettings() {
   $('setVolcKey').placeholder = settingsCache.voice?.volcConfigured ? t('已保存 key') : '';
   $('setVoiceId').value = settingsCache.voice?.voiceId || '';
   $('setViduKey').placeholder = settingsCache.voice?.viduConfigured ? t('已保存 key') : '';
+  $('setLiveMode').value = settingsCache.liveMode || 'all';
   fillProvider();
 }
 $('settingsBtn').onclick = async () => {
@@ -391,7 +398,7 @@ $('setClose').onclick = () => { $('settingsPanel').hidden = true; };
 $('setProvider').onchange = () => fillProvider();
 $('setSave').onclick = async () => {
   const id = $('setProvider').value;
-  const body = { provider: id, models: {}, keys: {}, voice: {} };
+  const body = { provider: id, models: {}, keys: {}, voice: {}, liveMode: $('setLiveMode').value };
   if ($('setModel').value.trim()) body.models[id] = $('setModel').value.trim();
   if ($('setKey').value) body.keys[id] = $('setKey').value;
   if ($('setVolcKey').value) body.voice.volcKey = $('setVolcKey').value;

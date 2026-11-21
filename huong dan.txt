@@ -1,0 +1,95 @@
+HUONG DAN - OPEN LIVESTREAM v7
+==============================
+
+Ban nay co: host Vy noi tieng Viet, live mock 3 nen tang, hat / do vui /
+ke chuyen / ban hang, cai dat key tren web, noi Xingchi qua OpenCode,
+chon chuc nang live, chay bang file nhay dup (khong can go lenh).
+
+1. CHAY PHONG LIVE (nhay dup, khong can cmd)
+---------------------------------------------
+- Chi chay phong live: nhay dup Chay-Live.bat
+  (lan dau tu cai thu vien; trinh duyet tu mo http://127.0.0.1:4370)
+- Chi chay cau noi OpenCode: nhay dup Chay-Cau-Noi.bat
+- Chay ca hai 1 lan: nhay dup Chay-Tat-Ca.bat (mo 2 cua so)
+- Tat: dong cua so den do.
+- Neu tu chay bang cmd: cd app roi set IDOL=viet, set AVATAR=mock,
+  set MODE=test, roi node server\index.mjs
+
+2. NOI XINGCHI QUA OPENCODE (moi o v7)
+--------------------------------------
+Xingchi chan goi truc tiep (loi 403 tieng Trung) vi no chi cho phep
+Codex / Claude Code / OpenCode / Cursor... goi. Key Xingchi cua ban
+khong sai — phai di qua OpenCode:
+1. Chay cau noi: nhay dup Chay-Cau-Noi.bat (cua so den phai hien
+   "cau noi OpenCode chay o http://127.0.0.1:20129").
+   Cau noi tu chay `opencode serve` neu chua co.
+2. Mo phong live, bam banh rang (Cai dat) -> cho "Pick an AI" chon
+   "OpenCode (qua cau noi)". Khong can nhap key — key Xingchi nam
+   trong OpenCode roi. O Model de mac dinh xingchi/gpt-6.1-sol.
+3. Bam Luu, roi bam Kiem tra. Hien "Key chay duoc" la xong.
+4. Neu Kiem tra bao "Khong noi duoc toi cau noi...": cua so cau noi
+   chua chay — chay Chay-Cau-Noi.bat roi bam Kiem tra lai.
+- Luu y: cau noi giu NGUYEN 1 phien OpenCode cho ca buoi live nen
+  host nho mach chuyen. Tat cau noi thi phien moi bat dau lai.
+- Neu ban da cai Gemini / DeepSeek trong OpenCode thi doi o Model
+  thanh ten do (vi du gemini/gemini-3-flash) la dung duoc, van
+  khong can key trong panel.
+
+3. CHON CHUC NANG LIVE (moi o v7)
+----------------------------------
+Trong Cai dat -> muc "Cai dat phat live" co o "Chuc nang live":
+- Tat ca: chay het nhu cu (do vui + ke chuyen + hat + ban hang).
+- Chi tro chuyen: host chi tra loi binh luan, khong lam tro nao.
+- Do vui / Ke chuyen / Hat / Ban hang: chi chuc nang do chay,
+  cac lenh cua chuc nang khac chi la cau chat thuong.
+- Chon xong bam Luu la ap dung ngay, khong can khoi dong lai server.
+- Vi du: chon "Do vui" thi go "do vui" se mo vong do, go "ke chuyen
+  meo" chi duoc tra loi nhu cau chat thuong, khong ke chuyen.
+
+4. CAI DAT KEY AI (cac nha khac)
+--------------------------------
+Bam banh rang (Cai dat) trong phong live: chon nha (OpenRouter,
+Gemini, OpenAI, Anthropic, DeepSeek, Xingchi, 9Router, Custom),
+dan key, bam Luu, bam Kiem tra. Key luu trong file keys.json tren
+may ban, trinh duyet khong bao gio thay gia tri key.
+- Kiem tra het 30 giay moi bao loi (ban cu 15 giay hay bi timeout
+  voi Gemini). Neu van bao het gio: bam Kiem tra lai; van cham thi
+  kiem tra mang hoac doi nha khac. Ten model Gemini mac dinh la
+  gemini-2.5-flash; neu ban go model khac thi phai dung ten that
+  cua Google (sai ten thuong bao loi nhanh, khong phai timeout).
+- Key giong (Volc/Doubao) + mat (Vidu) o muc "Voice and face":
+  luu xong KHOI DONG LAI server moi co tac dung.
+- Ban mock (khong key): host noi bang cau co san tieng Viet.
+  Dong log "model failed: model off" la binh thuong khi chua co key.
+
+5. HAT / DO VUI / KE CHUYEN / BAN HANG
+---------------------------------------
+- Hat: go "hat bai Trong com" (3 bai dan ca co san loi: Trong com,
+  Ly cay bong, Co la). Muon hat file nhac cua ban: bo file .m4a
+  + index.json vao thu muc data/songs (xem HUONG_DAN-V5 cu).
+- Do vui: go "do vui" de mo vong (60 giay, tra loi khong dau van
+  tinh, het 30 giay moi mo vong sau). Bang diem hien tren phong.
+- Ke chuyen: go "ke chuyen meo" (3 truyen co san).
+- Ban hang: sua app\idols\viet\products.json (ten / gia / link)
+  roi khoi dong lai server. Phong co panel San pham; khan gia go
+  "mua Ao thun" hoac "gia bao nhieu" de hoi gia. Host tu gioi
+  thieu 1 mon moi 15 phut (chi khi dang live).
+
+6. DAY LIVE THAT (YouTube / Facebook / TikTok)
+---------------------------------------------
+Trong Cai dat -> muc "Cai dat phat live": nhap dia chi RTMP + key
+lay tu YouTube Studio / Facebook Live / TikTok Live Studio cho
+tung nen tang, bam Luu, roi bam Bat dau day. O ban mock chi LUU
+duoc — day that can AVATAR=vidu + key Volc RTC (xem SETUP.md).
+
+7. LOI THUONG GAP
+-----------------
+- Mo file .bat ma bao khong thay Node: cai Node 22+ tai
+  https://nodejs.org (ban Node tren may ban la 26, chay duoc).
+- Mo Chay-Cau-Noi.bat ma bao khong thay opencode: cai bang
+  npm install -g opencode-ai, hoac them thu muc OpenCode vao PATH.
+- Phong live mo len ma host khong noi: xem cua so server co dong
+  "model off" khong — chua co key thi host chi noi cau co san,
+  van la binh thuong.
+- Kiem tra Xingchi truc tiep (khong qua OpenCode) bao 403 tieng
+  Trung: khong phai loi key — lam theo muc 2 o tren.

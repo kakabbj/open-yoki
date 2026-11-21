@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { norm, createQuiz, createStoryteller, createShop, findLyrics, parseCommand, priceText, QUIZ_START, STORY_ASK, SING_ASK, SELL_ASK } from '../server/showacts.mjs';
+import { norm, createQuiz, createStoryteller, createShop, findLyrics, parseCommand, priceText, modeAllows, QUIZ_START, STORY_ASK, SING_ASK, SELL_ASK } from '../server/showacts.mjs';
 import { SONG_ASK_VI } from '../server/radio.mjs';
 import { fallbackLine, promptFor } from '../server/brain.mjs';
 
@@ -154,4 +154,53 @@ test('the viet idol data files are shaped right', () => {
   const lyrics = load('../idols/viet/lyrics.json');
   assert.ok(lyrics.length >= 2);
   for (const l of lyrics) assert.ok(l.title && l.verse);
+});
+
+test('live mode: modeAllows gates each act, chat and joins always pass', () => {
+  assert.equal(modeAllows('quiz', 'all'), true);
+  assert.equal(modeAllows('quizWin', 'quiz'), true);
+  assert.equal(modeAllows('quizEnd', 'quiz'), true);
+  assert.equal(modeAllows('quizBusy', 'quiz'), true);
+  assert.equal(modeAllows('quiz', 'story'), false);
+  assert.equal(modeAllows('story', 'story'), true);
+  assert.equal(modeAllows('storyEnd', 'story'), true);
+  assert.equal(modeAllows('story', 'quiz'), false);
+  assert.equal(modeAllows('sing', 'sing'), true);
+  assert.equal(modeAllows('song', 'sing'), true);
+  assert.equal(modeAllows('sing', 'sell'), false);
+  assert.equal(modeAllows('sell', 'sell'), true);
+  assert.equal(modeAllows('sell', 'sing'), false);
+  for (const kind of ['quiz', 'story', 'sing', 'song', 'sell']) assert.equal(modeAllows(kind, 'chat'), false);
+  assert.equal(modeAllows('chat', 'chat'), true);
+  assert.equal(modeAllows('join', 'quiz'), true);
+  assert.equal(modeAllows('thanks', 'sell'), true);
+  assert.equal(modeAllows(null, 'chat'), true);
+});
+
+test('live mode: a switched-off act never starts — the state machine is not even touched', () => {
+  const quiz = createQuiz({ questions: [{ q: 'q', a: 'a' }], now: () => 0, rand: () => 0, timeoutMs: 60000, cooldownMs: 0 });
+  const story = createStoryteller({ stories: [{ title: 'Chuyện mèo', topics: ['mèo'], chunks: ['c1', 'c2'] }], now: () => 0, rand: () => 0 });
+  const shop = createShop({ products: [{ id: 'ao', name: 'Áo thun', price: 199000 }] });
+  const lyrics = [{ title: 'Trống cơm', verse: 'v' }];
+  const ctx = { quiz, story, shop, lyrics };
+  // chat-only: every act command stays plain chat, nothing starts
+  assert.equal(parseCommand({ ...ctx, mode: 'chat' }, 'Lan', 'đố vui'), null);
+  assert.equal(quiz.state().active, false);
+  assert.equal(parseCommand({ ...ctx, mode: 'chat' }, 'Lan', 'kể chuyện mèo'), null);
+  assert.equal(story.state().active, false);
+  assert.equal(parseCommand({ ...ctx, mode: 'chat' }, 'Lan', 'mua Áo thun'), null);
+  assert.equal(parseCommand({ ...ctx, mode: 'chat' }, 'Lan', 'hát bài Trống cơm'), null);
+  // quiz-only: only the quiz starts; a story ask starts nothing
+  assert.equal(parseCommand({ ...ctx, mode: 'quiz' }, 'Lan', 'kể chuyện mèo'), null);
+  assert.equal(story.state().active, false);
+  const q = parseCommand({ ...ctx, mode: 'quiz' }, 'Lan', 'đố vui');
+  assert.equal(q.kind, 'quiz');
+  assert.equal(quiz.state().active, true);
+  // story-only: the quiz command is ignored while a quiz round is already running
+  assert.equal(parseCommand({ ...ctx, mode: 'story' }, 'Minh', 'đố vui'), null);
+  assert.equal(parseCommand({ ...ctx, mode: 'story' }, 'Minh', 'kể chuyện mèo').kind, 'story');
+  assert.equal(story.state().active, true);
+  // sell-only: the shop rotates only for sell mode
+  assert.equal(parseCommand({ ...ctx, mode: 'sing' }, 'Lan', 'mua Áo thun'), null);
+  assert.equal(parseCommand({ ...ctx, mode: 'sell' }, 'Lan', 'mua Áo thun').kind, 'sell');
 });

@@ -114,6 +114,9 @@ const EN = {
   '猜谜': 'Quiz', '讲故事': 'Tell a story', '点歌': 'Sing a song',
   '推流设置': 'Live push settings', '推流地址（RTMP）': 'RTMP URL', '推流密钥': 'Stream key',
   '保存推流': 'Save push settings', '开始推流': 'Start pushing', '停止推流': 'Stop pushing',
+  // live function (v7): pick one act; OpenCode provider needs no key
+  '直播功能': 'Live function', '全部功能': 'All functions', '只聊天': 'Chat only', '卖货': 'Selling',
+  '不用 key，key 在 OpenCode 里；先跑桥接。': 'No key needed — the key lives in OpenCode. Start the bridge first.',
   '推流地址和密钥从各平台的直播控制台复制（YouTube Studio / Facebook Live / TikTok Live Studio）': 'Copy the RTMP URL and stream key from each platform’s live console (YouTube Studio / Facebook Live / TikTok Live Studio)',
   '模拟模式：还没法推流真画面，需要 Vidu + Volc RTC 才能推流；先存 key 在这里，等跑真版时自动推。': 'Mock mode: no real picture to push yet — pushing needs Vidu + Volc RTC. Save the keys here and they will push automatically on a real run.',
   '已保存 {n} 个平台': 'Saved {n} platforms', '正在推流': 'Pushing live', '还没推流': 'Not pushing',
@@ -230,6 +233,9 @@ const VI = {
   '猜谜': 'Đố vui', '讲故事': 'Kể chuyện', '点歌': 'Hát bài',
   '推流设置': 'Cài đặt phát live', '推流地址（RTMP）': 'Địa chỉ RTMP', '推流密钥': 'Key phát live',
   '保存推流': 'Lưu phát live', '开始推流': 'Bắt đầu đẩy live', '停止推流': 'Dừng đẩy',
+  // live function (v7): pick one act; OpenCode provider needs no key
+  '直播功能': 'Chức năng live', '全部功能': 'Tất cả', '只聊天': 'Chỉ trò chuyện', '卖货': 'Bán hàng',
+  '不用 key，key 在 OpenCode 里；先跑桥接。': 'Không cần key — key nằm trong OpenCode. Chạy cầu nối trước.',
   '推流地址和密钥从各平台的直播控制台复制（YouTube Studio / Facebook Live / TikTok Live Studio）': 'Lấy địa chỉ RTMP và key phát live trong phần live của từng nền tảng (YouTube Studio / Facebook Live / TikTok Live Studio)',
   '模拟模式：还没法推流真画面，需要 Vidu + Volc RTC 才能推流；先存 key 在这里，等跑真版时自动推。': 'Chế độ mock: chưa đẩy được hình thật, cần Vidu + Volc RTC mới đẩy được. Cứ lưu key ở đây, chạy bản thật là tự đẩy.',
   '已保存 {n} 个平台': 'Đã lưu {n} nền tảng', '正在推流': 'Đang đẩy live', '还没推流': 'Chưa đẩy',

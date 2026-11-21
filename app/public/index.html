@@ -81,6 +81,7 @@
       <label class="set-row"><span data-i18n="选 AI">Pick an AI</span><select id="setProvider"></select></label>
       <label class="set-row"><span data-i18n="模型">Model</span><input id="setModel" autocomplete="off" data-i18n-placeholder="留空用默认模型" placeholder="Empty = default model"></label>
       <label class="set-row"><span data-i18n="Key">Key</span><input id="setKey" type="password" autocomplete="off" data-i18n-placeholder="还没保存 key" placeholder="No key saved"></label>
+      <p class="set-note" id="setOpencodeNote" hidden data-i18n="不用 key，key 在 OpenCode 里；先跑桥接。">No key needed — the key lives in OpenCode. Start the bridge first.</p>
       <div class="set-btns">
         <button type="button" id="setSave" data-i18n="保存">Save</button>
         <button type="button" id="setTest" data-i18n="检查">Test</button>
@@ -94,6 +95,15 @@
       <p class="set-note" data-i18n="语音和画面在重启服务器后生效">Voice and face apply after the server restarts</p>
       <!-- Live push (v5): RTMP address + stream key per platform, so the show really goes out. -->
       <h3 data-i18n="推流设置">Live push settings</h3>
+      <!-- Live function (v7): pick one act — only the picked act runs on air. -->
+      <label class="set-row"><span data-i18n="直播功能">Live function</span><select id="setLiveMode">
+        <option value="all" data-i18n="全部功能">All functions</option>
+        <option value="chat" data-i18n="只聊天">Chat only</option>
+        <option value="quiz" data-i18n="猜谜">Quiz</option>
+        <option value="story" data-i18n="讲故事">Tell a story</option>
+        <option value="sing" data-i18n="点歌">Sing a song</option>
+        <option value="sell" data-i18n="卖货">Selling</option>
+      </select></label>
       <p class="set-note" data-i18n="推流地址和密钥从各平台的直播控制台复制（YouTube Studio / Facebook Live / TikTok Live Studio）">Copy the RTMP URL and stream key from each platform’s live console (YouTube Studio / Facebook Live / TikTok Live Studio)</p>
       <div id="pushRows"></div>
       <p class="set-note" id="pushStatus"></p>

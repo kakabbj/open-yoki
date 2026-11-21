@@ -63,6 +63,61 @@ test('key store: voice keys come from settings first, env second', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('key store: OpenCode provider needs no key — the key lives in OpenCode', () => {
+  const dir = tmp(), file = path.join(dir, 'keys.json');
+  const store = createKeyStore({ file, env: {} });
+  const b = store.brainFor('opencode');
+  assert.equal(b.provider, 'opencode');
+  assert.equal(b.kind, 'chat');
+  assert.equal(b.model, 'xingchi/gpt-6.1-sol');
+  assert.equal(b.base, 'http://127.0.0.1:20129/v1');
+  assert.equal(b.key, 'opencode-local');
+  assert.equal(store.status().providers.find(p => p.id === 'opencode').configured, true);
+  store.save({ provider: 'opencode' });
+  assert.equal(store.brain().provider, 'opencode');
+  // and the dummy key never reaches the public status
+  assert.equal(JSON.stringify(store.status()).includes('opencode-local'), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('key store: live mode defaults to all, saves, and refuses an unknown mode', () => {
+  const dir = tmp(), file = path.join(dir, 'keys.json');
+  const store = createKeyStore({ file, env: {} });
+  assert.equal(store.liveMode(), 'all');
+  assert.equal(store.status().liveMode, 'all');
+  store.save({ liveMode: 'quiz' });
+  assert.equal(store.liveMode(), 'quiz');
+  assert.equal(store.status().liveMode, 'quiz');
+  assert.equal(createKeyStore({ file, env: {} }).liveMode(), 'quiz');
+  assert.throws(() => store.save({ liveMode: 'nope' }), /unknown live mode/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('settings endpoints: OpenCode test reports a down bridge in Vietnamese', async t => {
+  const { start } = await import('../server/index.mjs');
+  const dir = tmp();
+  const app = await start({ IDOL: 'viet', MODE: 'test', DATA_DIR: dir, AVATAR: 'mock' });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const port = app.server.address().port;
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    let r = await fetch(`${base}/api/settings`);
+    let j = await r.json();
+    assert.equal(j.providers.find(p => p.id === 'opencode').configured, true);
+    r = await fetch(`${base}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'opencode' }) });
+    j = await r.json();
+    assert.equal(j.modelOn, true);
+    // nothing listens on the bridge port in this test, so the check fails fast
+    r = await fetch(`${base}/api/settings/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'opencode' }) });
+    j = await r.json();
+    assert.equal(j.ok, false);
+    assert.match(j.error, /cầu nối OpenCode/);
+  } finally {
+    await app.shutdown();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('chat completions client: request shape, answer and cost', async () => {
   let seen;
   const ask = chatCompletions({ key: 'k1', model: 'gpt-4o-mini', base: 'https://api.example.com/v1', fetchImpl: stubFetch((url, opts) => {

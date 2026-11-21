@@ -37,7 +37,7 @@ import { createMemory } from './memory.mjs';
 import { createMarket, price as fmtPrice, pct as fmtPct, ALIASES } from './market.mjs';
 import { createSquare, cleanComments, createSquareRoom, watching, coinView, readSquare } from './square.mjs';
 import { createSongs } from './songs.mjs';
-import { createQuiz, createStoryteller, createShop, parseCommand, priceText } from './showacts.mjs';
+import { createQuiz, createStoryteller, createShop, parseCommand, priceText, modeAllows } from './showacts.mjs';
 import { createMemes } from './memes.mjs';
 import { createNews, createSquareFeed } from './news.mjs';
 import { createXLearn } from './xlearn.mjs';
@@ -542,14 +542,17 @@ export async function start(env = process.env) {
   const scheduleTimer = setInterval(() => { watchSchedule(); keepOpen(); keepAvatar(); keepSquare(); checkCredits(); if (schedule.onAir()) voice?.warm?.(); }, 15e3);
   // Show acts tick (v5): a quiz round ends on its own, a story's next chunk comes on its own, and every
   // 15 minutes on air she showcases one product herself — never while a quiz or a story is running.
+  // Live function (v7): the tick only runs the acts the operator picked — a switched-off act
+  // never starts, ends or showcases on its own.
   let lastSellAt = Date.now();   // first showcase is 15 min after the server starts, not 5 s in
   function showTick() {
     if (!schedule.onAir()) return;
-    const end = quiz?.tick();
+    const mode = keyStore.liveMode();
+    const end = modeAllows('quiz', mode) ? quiz?.tick() : null;
     if (end) brain.add({ kind: 'quizEnd', question: end.question, answer: end.answer });
-    const nxt = storyteller?.tick();
+    const nxt = modeAllows('story', mode) ? storyteller?.tick() : null;
     if (nxt) brain.add(nxt.done ? { kind: 'storyEnd', title: nxt.title } : { kind: 'story', title: nxt.title, chunk: nxt.chunk, n: nxt.n, total: nxt.total });
-    if (shop && !quiz?.state().active && !storyteller?.state().active && Date.now() - lastSellAt > 15 * 60e3) {
+    if (shop && modeAllows('sell', mode) && !quiz?.state().active && !storyteller?.state().active && Date.now() - lastSellAt > 15 * 60e3) {
       const p = shop.next();
       if (p) { lastSellAt = Date.now(); brain.add({ kind: 'sell', product: p, priceText: priceText(p) }); }
     }
@@ -635,6 +638,8 @@ export async function start(env = process.env) {
       routes: Object.fromEntries(Object.entries(routes).map(([k, r]) => [k, r.on ? (r.ok === false ? 'down' : 'ok') : 'off'])),
       why: Object.fromEntries(Object.entries(routes).filter(([, r]) => r.ok === false && r.err).map(([k, r]) => [k, r.err])),
       // Show acts (v5): her shop, the quiz round, the story in progress and the song list.
+      // Live function (v7): which act is picked on air.
+      liveMode: keyStore.liveMode(),
       products: shop?.list() || [],
       quiz: quiz?.state() || null,
       story: storyteller?.state() || null,
@@ -740,9 +745,21 @@ export async function start(env = process.env) {
         const b = keyStore.brainFor(id);
         if (!b) return json(res, 200, { ok: false, error: 'no key' });
         try {
-          const r = await clientFor(b)([{ role: 'user', content: 'Trả lời đúng một từ: ok' }], { signal: AbortSignal.timeout(15000) });
+          // 30 s, not 15: a slow provider (Gemini from Vietnam) timed out at 15 s with a
+          // bare English "operation aborted due to timeout" (v7). Slow answers are still
+          // reported in Vietnamese below instead of that raw line.
+          const r = await clientFor(b)([{ role: 'user', content: 'Trả lời đúng một từ: ok' }], { signal: AbortSignal.timeout(30000) });
           return json(res, 200, { ok: true, text: String(r.text || '').slice(0, 200) });
-        } catch (e) { return json(res, 200, { ok: false, error: String(e.message || e).slice(0, 240) }); }
+        } catch (e) {
+          const msg = String(e.message || e);
+          if (/aborted due to timeout|TimeoutError|timed out/i.test(msg)) {
+            return json(res, 200, { ok: false, error: `Hết 30 giây mà ${b.provider} chưa trả lời — bấm Kiểm tra lại. Nếu vẫn chậm, kiểm tra mạng hoặc đổi nhà khác.` });
+          }
+          if (b.provider === 'opencode' && /fetch failed|ECONNREFUSED|Failed to fetch|socket hang up/i.test(msg)) {
+            return json(res, 200, { ok: false, error: 'Không nối được tới cầu nối OpenCode ở 127.0.0.1:20129 — chạy cầu nối trước (nháy đúp Chay-Cau-Noi.bat, xem huong dan).' });
+          }
+          return json(res, 200, { ok: false, error: msg.slice(0, 240) });
+        }
       }
       // Push settings (v5): where the live really goes — RTMP address + stream key per platform
       // (YouTube / Facebook / TikTok, copied from each platform's live console). Operator only.
@@ -902,14 +919,18 @@ export async function start(env = process.env) {
           memory.seen(name);
           const item = world.chat({ addr, text, who: name, from: 'square' });
           if (radio?.on) { radio.chat(name, item.text); showLog({ k: 'chat', who: name, text: item.text, radio: true }); continue; }
-          const asked = square?.live ? showSongs?.ask(name, item.text) : null;
+          // Live function (v7): the song ask queues a song and the quiz answer ends a
+          // round, so the gate is before the call, not after — a switched-off act is
+          // never even read. parseCommand carries the mode for the same reason.
+          const mode = keyStore.liveMode();
+          const asked = modeAllows('song', mode) && square?.live ? showSongs?.ask(name, item.text) : null;
           if (asked?.id && !showSongs.current?.by) playNextSong();
           // same acts as the web room: a quiz answer, a song, a story, a folk song or a product question
-          const win = quiz?.answer(name, item.text);
+          const win = modeAllows('quiz', mode) ? quiz?.answer(name, item.text) : null;
           if (win) brain.add({ kind: 'quizWin', ...win });
           else if (asked?.id) brain.add({ kind: 'song', by: name, song: asked, from: 'square' });
           else {
-            const cmd = parseCommand({ quiz, story: storyteller, shop, lyrics }, name, item.text);
+            const cmd = parseCommand({ quiz, story: storyteller, shop, lyrics, mode }, name, item.text);
             if (cmd) brain.add(cmd.kind === 'sell' ? { ...cmd, priceText: priceText(cmd.product) } : cmd);
             else if (asked?.miss) brain.add({ kind: 'song', by: name, song: asked, from: 'square' });
             else brain.add({ kind: 'chat', chatId: item.id, addr, name, text: item.text, tier: 'guest', tierName: '游客', rank: null, from: 'square' });
@@ -962,13 +983,15 @@ export async function start(env = process.env) {
         const item = world.chat({ addr, text, who: name, from: 'web' });
         // A quiz answer wins the round; a song request, a story, a song from the lyrics bank or a
         // product question becomes its own act; anything else is plain chat for her to answer.
-        const win = quiz?.answer(name, item.text);
+        // Live function (v7): same gates as the square feed — see above.
+        const mode = keyStore.liveMode();
+        const win = modeAllows('quiz', mode) ? quiz?.answer(name, item.text) : null;
         if (win) brain.add({ kind: 'quizWin', ...win });
         else {
-          const asked = showSongs?.ask(name, item.text);
+          const asked = modeAllows('song', mode) ? showSongs?.ask(name, item.text) : null;
           if (asked?.id) { if (!showSongs.current?.by) playNextSong(); brain.add({ kind: 'song', by: name, song: asked }); }
           else {
-            const cmd = parseCommand({ quiz, story: storyteller, shop, lyrics }, name, item.text);
+            const cmd = parseCommand({ quiz, story: storyteller, shop, lyrics, mode }, name, item.text);
             if (cmd) brain.add(cmd.kind === 'sell' ? { ...cmd, priceText: priceText(cmd.product) } : cmd);
             else if (asked?.miss) brain.add({ kind: 'song', by: name, song: asked });
             else brain.add({ kind: 'chat', chatId: item.id, addr, name, text: item.text, tier: 'guest', tierName: '游客', rank: null });

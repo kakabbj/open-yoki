@@ -5,6 +5,7 @@
 // voice and face keys apply when the server next starts.
 import fs from 'node:fs';
 import path from 'node:path';
+import { LIVE_MODES } from './showacts.mjs';
 
 // kind: 'chat' = OpenAI-compatible /chat/completions, 'anthropic' = Messages API,
 // 'responses' = /v1/responses (Xingchi). base/model are the defaults; the panel can
@@ -17,6 +18,11 @@ export const PROVIDERS = [
   { id: 'deepseek', name: 'DeepSeek', env: 'DEEPSEEK_API_KEY', kind: 'chat', base: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
   { id: 'xingchi', name: 'Xingchi', env: 'XINGCHI_API_KEY', kind: 'responses', base: 'https://api.xingchiapi.com/v1', model: 'gpt-6.1-sol' },
   { id: 'router9', name: '9Router', env: 'ROUTER9_API_KEY', kind: 'chat', base: 'http://127.0.0.1:20128/v1', model: 'gemini/gemini-3-flash' },
+  // OpenCode (v7): no key of its own — the key lives in OpenCode, the brain talks to it
+  // through the local bridge (tools/opencode-bridge, 127.0.0.1:20129). The dummy key
+  // below is only so brain() resolves; it is sent to the bridge on localhost, which
+  // ignores Authorization entirely.
+  { id: 'opencode', name: 'OpenCode (qua cầu nối)', env: null, kind: 'chat', base: 'http://127.0.0.1:20129/v1', model: 'xingchi/gpt-6.1-sol' },
   { id: 'custom', name: 'Custom (OpenAI-compatible)', env: null, kind: 'chat', base: '', model: '' },
 ];
 export const providerById = id => PROVIDERS.find(p => p.id === id) || null;
@@ -34,6 +40,7 @@ export function createKeyStore({ file, env = process.env, idolModel = null }) {
   const keyFor = id => {
     const p = providerById(id);
     if (!p) return null;
+    if (id === 'opencode') return 'opencode-local';
     if (str(cur.keys, id)) return cur.keys[id];
     if (p.env && env[p.env]) return env[p.env];
     if (id === 'deepseek' && env.HEART_KEY_DS) return env.HEART_KEY_DS;
@@ -71,7 +78,10 @@ export function createKeyStore({ file, env = process.env, idolModel = null }) {
     provider: str(cur, 'provider') || 'openrouter',
     providers: PROVIDERS.map(p => ({ id: p.id, name: p.name, kind: p.kind, configured: !!keyFor(p.id), model: modelFor(p.id), defaultModel: p.model, base: baseFor(p.id), defaultBase: p.base })),
     voice: { volcConfigured: !!(str(cur.voice, 'volcKey') || env.VOLC_API_KEY), voiceId: str(cur.voice, 'voiceId') || env.DOUBAO_VOICE_ID || '', viduConfigured: !!(str(cur.voice, 'viduKey') || env.VIDU_KEY) },
+    liveMode: liveMode(),
   });
+  // Which show act runs on air right now ('all' when nothing was ever picked).
+  const liveMode = () => LIVE_MODES.includes(cur.liveMode) ? cur.liveMode : 'all';
   // Merge a patch from the settings panel. A key value of '' clears the saved key
   // (an absent key leaves it alone). Throws on anything malformed.
   const save = patch => {
@@ -80,6 +90,10 @@ export function createKeyStore({ file, env = process.env, idolModel = null }) {
     if (patch.provider !== undefined) {
       if (!providerById(patch.provider)) throw new Error('unknown provider');
       next.provider = patch.provider;
+    }
+    if (patch.liveMode !== undefined) {
+      if (!LIVE_MODES.includes(patch.liveMode)) throw new Error('unknown live mode');
+      next.liveMode = patch.liveMode;
     }
     for (const [field, limit] of [['models', 200], ['keys', 500], ['bases', 300]]) {
       const o = patch[field];
@@ -108,5 +122,5 @@ export function createKeyStore({ file, env = process.env, idolModel = null }) {
     cur = next;
     return status();
   };
-  return { keyFor, modelFor, baseFor, brain, brainFor, voiceKeys, status, save };
+  return { keyFor, modelFor, baseFor, brain, brainFor, voiceKeys, status, save, liveMode };
 }

@@ -16,6 +16,23 @@ export const SING_ASK = /^\s*(?:hát|hát\s*bài)\s+(.+?)\s*[!.?~]*\s*$/i;
 export const SELL_ASK = /^\s*(?:bán\s*hàng|sản\s*phẩm|xem\s*đồ|shop|mua\s*hàng|báo\s*giá|giá\s*bao\s*nhiêu|giá\s+bán)\b/i;
 export const SELL_NAME = /^\s*(?:mua|giá|báo\s*giá)\s+(.+?)\s*(?:đi|nhé|nào)?[!.?~]*\s*$/i;
 
+// Live function (v7): 'all' runs every act, 'chat' runs none of them, the rest run
+// one act only. Chat commands for a switched-off act stay plain chat.
+export const LIVE_MODES = ['all', 'chat', 'quiz', 'story', 'sing', 'sell'];
+const MODE_OF_KIND = {
+  quiz: 'quiz', quizWin: 'quiz', quizEnd: 'quiz', quizBusy: 'quiz',
+  story: 'story', storyEnd: 'story',
+  sing: 'sing', song: 'sing',
+  sell: 'sell',
+};
+export function modeAllows(kind, mode) {
+  if (!kind) return true;
+  if (mode === 'all') return true;
+  const need = MODE_OF_KIND[kind];
+  if (!need) return true;   // chat, join, thanks... are not acts
+  return mode === need;
+}
+
 export const priceText = p => Number(p?.price) > 0 ? Number(p.price).toLocaleString('vi-VN') + (p.unit || 'đ') : 'chưa niêm giá';
 
 export function createQuiz({ questions = [], now = () => Date.now(), rand = Math.random, timeoutMs = 60000, cooldownMs = 30000 } = {}) {
@@ -106,9 +123,13 @@ export function findLyrics(q, lyrics = []) {
 
 // One chat line -> the brain event it asks for, or null (plain chat). Song requests for the audio
 // library are handled by songs.mjs and come first; this is quiz / story / sing / sell.
-export function parseCommand({ quiz, story, shop, lyrics = [] }, name, text) {
+// Live function (v7): an act that is switched off (mode) is never started here — the
+// state machines below (quiz.start, story.tell, shop.next) only run for the picked act,
+// so a "đố vui" in chat-only mode starts nothing and stays plain chat.
+export function parseCommand({ quiz, story, shop, lyrics = [], mode = 'all' }, name, text) {
   const t = String(text || '').trim();
   if (QUIZ_START.test(t)) {
+    if (!modeAllows('quiz', mode)) return null;
     const r = quiz?.start(name);
     if (r?.question) return { kind: 'quiz', question: r.question, by: name };
     if (r?.already) return { kind: 'quizBusy', question: r.question };
@@ -116,12 +137,14 @@ export function parseCommand({ quiz, story, shop, lyrics = [] }, name, text) {
   }
   const sm = t.match(STORY_ASK);
   if (sm) {
+    if (!modeAllows('story', mode)) return null;
     const r = story?.tell(sm[1] || '');
     if (r) return { kind: 'story', title: r.title, chunk: r.chunk, n: r.n, total: r.total };
     return null;
   }
   const gm = t.match(SING_ASK);
   if (gm) {
+    if (!modeAllows('sing', mode)) return null;
     const l = findLyrics(gm[1], lyrics);
     if (l) return { kind: 'sing', title: l.title, verse: l.verse };
     return null;
@@ -129,6 +152,7 @@ export function parseCommand({ quiz, story, shop, lyrics = [] }, name, text) {
   // A named buy ("mua Áo thun", "giá Ly sứ bao nhiêu") is a sell command only when the name
   // matches a real product — a stray "giá này cao quá" stays plain chat. A generic sell ask
   // ("bán hàng", "giá bao nhiêu") showcases the next product in rotation.
+  if (!modeAllows('sell', mode)) return null;
   const nm = t.match(SELL_NAME);
   if (nm) {
     const p = shop?.find(nm[1]);
