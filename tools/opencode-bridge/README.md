@@ -14,6 +14,12 @@ node bridge.mjs
 - Cau noi mo cong `http://127.0.0.1:20129` (doi bang `--port` hoac `BRIDGE_PORT`).
 - No tu dong chay `opencode serve` o cong 4096 neu chua co OpenCode nao chay.
   Neu muon tu chay OpenCode truoc: `opencode serve --port 4096`.
+- Tim lenh opencode: tren Windows, ban cai bang npm chi co file
+  `opencode.cmd` trong `%APPDATA%\npm` — Node khong chay truc tiep file
+  .cmd duoc (loi EINVAL) nen cau noi tu tim duong dan do va chay qua
+  cmd.exe. Neu cau noi bao "Khong tim thay lenh opencode" thi cai bang
+  `npm install -g opencode-ai`, hoac chi duong dan bang
+  `--bin "duong-dan-toi-opencode.cmd"` / bien moi truong `OPENCODE_BIN`.
 - Model mac dinh `xingchi/gpt-6.1-sol` (doi bang `--model` hoac `OPENCODE_MODEL`,
   dang `nha/model` — vi du `gemini/gemini-3-flash` neu ban da cai Gemini trong
   OpenCode). Trong panel Cua so cai dat, o Model cung doi duoc.

@@ -109,32 +109,74 @@ export function createSessionAsker({ opencode, model = DEFAULT_MODEL } = {}) {
   return { ask, get sessionId() { return sessionId; } };
 }
 
+// Where the `opencode` command lives. On Windows an npm-global install only puts
+// `%APPDATA%\npm\opencode.cmd` on PATH — and since Node 18.20.2 (CVE-2024-27980)
+// spawning a .cmd/.bat without shell:true fails with EINVAL, so a plain
+// spawn('opencode') dies at once and the bridge reports 502 forever, even though
+// `where opencode` in cmd finds it fine. Resolve it here, mirroring how cmd
+// searches PATH (each directory: .exe first, then .cmd/.bat): a real .exe wins
+// and spawns plainly, a .cmd/.bat must go through cmd.exe (shell:true).
+export function resolveOpencodeBin({ bin, env = process.env, platform = process.platform, exists = fs.existsSync } = {}) {
+  if (bin) return { bin, shell: /\.(cmd|bat)$/i.test(bin) };
+  if (platform !== 'win32') return { bin: 'opencode', shell: false };
+  const pathDirs = String(env.PATH || '').split(path.delimiter).map(d => d.replace(/^"|"$/g, '')).filter(Boolean);
+  for (const d of pathDirs) {
+    if (exists(path.join(d, 'opencode.exe'))) return { bin: 'opencode', shell: false };
+    for (const ext of ['opencode.cmd', 'opencode.bat']) {
+      const p = path.join(d, ext);
+      if (exists(p)) return { bin: p, shell: true };
+    }
+  }
+  const appdata = env.APPDATA || '';
+  const cmdPath = appdata ? path.join(appdata, 'npm', 'opencode.cmd') : '';
+  if (cmdPath && exists(cmdPath)) return { bin: cmdPath, shell: true };
+  return null;
+}
+
 // The bridge itself: POST /v1/chat/completions (OpenAI shape in, OpenAI shape out)
 // and GET /health. Started with no args it serves on 127.0.0.1:20129 and starts
 // `opencode serve` when nothing answers on the OpenCode URL.
-export function createBridge({ opencode, model = DEFAULT_MODEL, url = DEFAULT_OPENCODE_URL, bin = 'opencode', spawnFn = spawn, waitMs = 20000, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
+export function createBridge({ opencode, model = DEFAULT_MODEL, url = DEFAULT_OPENCODE_URL, bin = null, resolveBin = resolveOpencodeBin, spawnFn = spawn, waitMs = 20000, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
   const asker = createSessionAsker({ opencode, model });
   let serveChild = null;
+  let serveError = null; // null | 'not_found' | 'spawn_failed' | 'timeout'
+  let serveDied = false;
+  async function waitForServe(deadline) {
+    while (Date.now() < deadline) {
+      if (await opencode.up()) { serveError = null; return true; }
+      if (serveDied) return false;
+      await sleep(500);
+    }
+    serveError = 'timeout';
+    return false;
+  }
   async function ensureServe({ bin: binOverride, url: urlOverride } = {}) {
-    const useBin = binOverride || bin;
-    const useUrl = urlOverride || url;
-    if (await opencode.up()) return true;
-    if (serveChild) return false;
-    const u = new URL(useUrl);
+    if (await opencode.up()) { serveError = null; return true; }
+    if (serveChild) return waitForServe(Date.now() + waitMs); // a start is already in progress
+    const resolved = resolveBin({ bin: binOverride || bin });
+    if (!resolved) { serveError = 'not_found'; return false; }
+    const u = new URL(urlOverride || url);
     const port = u.port || '4096';
     const workdir = path.join(os.tmpdir(), 'open-livestream-opencode');
     fs.mkdirSync(workdir, { recursive: true });
     // The agent runs in an empty throwaway directory on purpose: even if the model ever
     // reaches for a tool, there is no project here to read or change.
-    serveChild = spawnFn(useBin, ['serve', '--port', port, '--hostname', '127.0.0.1'], { cwd: workdir, stdio: 'ignore' });
-    serveChild.on('error', () => { serveChild = null; });
-    serveChild.on('exit', () => { serveChild = null; });
-    const deadline = Date.now() + waitMs;
-    while (Date.now() < deadline) {
-      if (await opencode.up()) return true;
-      await sleep(500);
+    serveDied = false;
+    serveError = null;
+    let child;
+    try {
+      child = spawnFn(resolved.bin, ['serve', '--port', port, '--hostname', '127.0.0.1'], { cwd: workdir, stdio: 'ignore', ...(resolved.shell ? { shell: true } : {}) });
+    } catch {
+      serveError = 'spawn_failed';
+      return false;
     }
-    return false;
+    // keep the child in a local: the error handler below may run at once
+    // (a failing spawn reports immediately) and clear serveChild before the
+    // next line attaches the exit handler.
+    serveChild = child;
+    child.on('error', () => { serveDied = true; serveError = 'spawn_failed'; serveChild = null; });
+    child.on('exit', () => { serveDied = true; if (!serveError) serveError = 'spawn_failed'; serveChild = null; });
+    return waitForServe(Date.now() + waitMs);
   }
   async function handle(req, res) {
     const send = (code, obj) => {
@@ -150,7 +192,14 @@ export function createBridge({ opencode, model = DEFAULT_MODEL, url = DEFAULT_OP
         const body = await readJson(req, 65536);
         const messages = Array.isArray(body?.messages) ? body.messages : [];
         if (!messages.length) return send(400, { error: { message: 'messages is required', type: 'invalid_request' } });
-        if (!(await ensureServe())) return send(502, { error: { message: 'OpenCode chua chay — chay lenh: opencode serve (xem huong dan)', type: 'opencode_down' } });
+        if (!(await ensureServe())) {
+          const msg = serveError === 'not_found'
+            ? 'Khong tim thay lenh opencode — cai bang: npm install -g opencode-ai (xem huong dan)'
+            : serveError === 'spawn_failed'
+              ? 'Khong chay duoc opencode serve — mo cmd go: opencode serve --port 4096 (xem huong dan)'
+              : 'OpenCode chua chay — chay lenh: opencode serve (xem huong dan)';
+          return send(502, { error: { message: msg, type: 'opencode_down' } });
+        }
         const r = await asker.ask(messages, body.model);
         return send(200, openaiReply(r.text, r.model));
       }
@@ -159,7 +208,7 @@ export function createBridge({ opencode, model = DEFAULT_MODEL, url = DEFAULT_OP
       return send(502, { error: { message: String(err?.message || err).slice(0, 200), type: 'opencode_error' } });
     }
   }
-  return { handle, ensureServe, asker, get serveChild() { return serveChild; } };
+  return { handle, ensureServe, asker, get serveChild() { return serveChild; }, get serveError() { return serveError; } };
 }
 
 function readJson(req, limit) {
@@ -189,13 +238,14 @@ if (isMain) {
   const port = Number(argVal(process.argv.slice(2), 'port', 'BRIDGE_PORT', DEFAULT_PORT));
   const url = argVal(process.argv.slice(2), 'opencode-url', 'OPENCODE_URL', DEFAULT_OPENCODE_URL);
   const model = argVal(process.argv.slice(2), 'model', 'OPENCODE_MODEL', DEFAULT_MODEL);
-  const bin = argVal(process.argv.slice(2), 'bin', 'OPENCODE_BIN', 'opencode');
+  const bin = argVal(process.argv.slice(2), 'bin', 'OPENCODE_BIN', null);
   const opencode = createOpencode({ url });
   const bridge = createBridge({ opencode, model, url, bin });
   const server = http.createServer((req, res) => bridge.handle(req, res));
   server.listen(port, '127.0.0.1', async () => {
     console.log(`cau noi OpenCode chay o http://127.0.0.1:${port} (model mac dinh ${model})`);
     const up = await bridge.ensureServe();
-    console.log(up ? `da noi duoc OpenCode o ${url}` : `chua thay OpenCode o ${url} — chay tay: ${bin} serve --port ${new URL(url).port || 4096}`);
+    if (up) console.log(`da noi duoc OpenCode o ${url}`);
+    else console.log(`chua noi duoc OpenCode o ${url} (${bridge.serveError || 'timeout'}) — chay tay: opencode serve --port ${new URL(url).port || 4096}`);
   });
 }

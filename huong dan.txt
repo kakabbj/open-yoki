@@ -20,7 +20,7 @@ chon chuc nang live, chay bang file nhay dup (khong can go lenh).
 - Neu tu chay bang cmd: cd app roi set IDOL=viet, set AVATAR=mock,
   set MODE=test, roi node server\index.mjs
 
-2. NOI XINGCHI QUA OPENCODE (moi o v7)
+2. NOI XINGCHI QUA OPENCODE (moi o v7, sua o v7.2)
 --------------------------------------
 Xingchi chan goi truc tiep (loi 403 tieng Trung) vi no chi cho phep
 Codex / Claude Code / OpenCode / Cursor... goi. Key Xingchi cua ban
@@ -28,12 +28,20 @@ khong sai — phai di qua OpenCode:
 1. Chay cau noi: nhay dup Chay-Cau-Noi.bat (cua so den phai hien
    "cau noi OpenCode chay o http://127.0.0.1:20129").
    Cau noi tu chay `opencode serve` neu chua co.
+   (v7.2 sua loi: ban cai OpenCode bang npm thi tren may chi co file
+   opencode.cmd — cau noi cu goi thang lenh do nen bi loi EINVAL va
+   bao 502 "OpenCode chua chay" du `where opencode` van thay. Ban
+   moi tu tim file .cmd do va chay qua cmd.exe.)
 2. Mo phong live, bam banh rang (Cai dat) -> cho "Pick an AI" chon
    "OpenCode (qua cau noi)". Khong can nhap key — key Xingchi nam
    trong OpenCode roi. O Model de mac dinh xingchi/gpt-6.1-sol.
 3. Bam Luu, roi bam Kiem tra. Hien "Key chay duoc" la xong.
-4. Neu Kiem tra bao "Khong noi duoc toi cau noi...": cua so cau noi
-   chua chay — chay Chay-Cau-Noi.bat roi bam Kiem tra lai.
+4. Neu Kiem tra bao "Khong tim thay lenh opencode": mo cmd go
+   npm install -g opencode-ai, roi chay lai Chay-Cau-Noi.bat.
+   Neu bao "Khong chay duoc opencode serve": mo cmd go tay
+   opencode serve --port 4096 (de cua so do mo), roi bam Kiem tra lai.
+   Neu bao "Khong noi duoc toi cau noi...": cua so cau noi chua chay
+   — chay Chay-Cau-Noi.bat roi bam Kiem tra lai.
 - Luu y: cau noi giu NGUYEN 1 phien OpenCode cho ca buoi live nen
   host nho mach chuyen. Tat cau noi thi phien moi bat dau lai.
 - Neu ban da cai Gemini / DeepSeek trong OpenCode thi doi o Model
