@@ -1,5 +1,29 @@
-HUONG DAN - OPEN LIVESTREAM v7.9.5
+HUONG DAN - OPEN LIVESTREAM v7.9.6
 ==============================
+
+v7.9.6 KE CHUYEN LIEN MACH + KHONG DOC TAG/CAM XUC + BOT MAT CHU DAU + BOT NAO LOI:
+1. KE CHUYEN LIEN MACH: truoc day moi doan truyen deu phai cho goi
+   AI ke lai (moi doan 1 cuoc goi AI + lam giong, noi nhau, mat
+   khoang 1 phut giua 2 cau). Gio Vy doc thang doan truyen da viet
+   san trong thu vien, khong goi AI nua — doan sau noi ngay sau
+   doan truoc, chi cach nhau luc lam giong (vai giay). Truyen van
+   het 3 doan nhu cu, xong Vy hoi co muon nghe truyen khac khong.
+2. KHONG DOC TAG/CAM XUC NUA: the [Cuoi nghieng dau] dai 15 ky tu
+   vuot qua gioi han cu (12) nen van lot len phu de va bi doc het;
+   dang "Nghi | Len vui | ..." (2 dau |) cung chi cat duoc nua
+   dau. Gio gioi han tag len 24 ky tu, cat het ca 2 doan cua dang
+   2 dau |, ke ca khi co tag dung truoc (vd [Vui]Nghi | ...), va
+   duong doc (giong noi) cung cat tag truoc khi doc de phong sot.
+3. BOT MAT CHU DAU: giong Google du phong khi bi chan (403) chi
+   thu lai 3 lan voi cho ngan — doan dau tien chet la ca cau mat
+   luon may chu dau. Gio thu lai toi 5 lan, cho lau dan
+   (0,6s/1,2s/2,4s/4,8s) de Google het chan roi moi bo doan.
+4. BOT NAO LOI (model: timeout): AI qua cau noi OpenCode thi
+   thoang tra loi cham hon 12 giay (gioi han cu) nen bi cat ngang
+   va bao loi. Gio cho toi 20 giay (cau dai 45 giay).
+5. Warmup giong VieNeu: truoc day chi cho 10 giay de nap model
+   (model nap mat 6-88 giay) nen hay bi ngat giua chung va lam
+   nhieu log loi /warmup. Gio cho toi 120 giay.
 
 v7.9.5 BO NOT TIEN TO "CAM XUC VUI NHE |" (KHONG DAU HAI CHAM):
 Ban v7.9.4 chi cat dang co dau hai cham ("Cam nhan: ... |").

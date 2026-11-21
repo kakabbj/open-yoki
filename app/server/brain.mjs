@@ -307,20 +307,29 @@ export function fitLength(text, max = 300) {
 export function parseReply(idol, raw) {
   let text = String(raw || '').trim().replace(/^["“]|["”]$/g, '');
   // The model sometimes opens with a thought and a pipe — "Cảm nhận: mềm lòng |
-  // <speech>", "Cảm xúc vui nhẹ | <speech>", "Sốt ruột | <speech>" — no colon
-  // in the second form, and the mood itself can run long ("Cảm xúc vui nhẹ" is
-  // 15 characters), so takeInner's colon form does not catch it. Drop the
-  // thought, keep the speech. Vietnamese only, and only when the rest is a
-  // real line (a sentence never starts with one of these labels + a pipe).
-  if (idol.lang === 'vi') text = text.replace(/^\s*(?:(?:Cảm xúc|Cảm nhận|Nghĩ|Tâm trạng|Tâm tình)[^|\n\[【]{0,24}|[^|\n\[【:：]{1,12})\|\s*(?=[\s\S]{20,})/, '');
+  // <speech>", "Cảm xúc vui nhẹ | <speech>", "Nghĩ | Lén vui | <speech>",
+  // "Sốt ruột | <speech>" — no colon in these forms, and the mood itself can
+  // run long ("Cảm xúc vui nhẹ" is 15 characters), so takeInner's colon form
+  // does not catch it. Drop the thought, keep the speech. Vietnamese only, and
+  // only when the rest is a real line (a sentence never starts with one of
+  // these labels + a pipe). The label form can carry a second pipe ("Nghĩ |
+  // <mood> |"), so one strip eats both segments; and a leading tag
+  // ("[Vui]Nghĩ | ...") shields the prefix from the ^ anchor, so the strip
+  // runs again after the tags are consumed (v7.9.6).
+  const stripThought = t => idol.lang === 'vi'
+    ? t.replace(/^\s*(?:(?:Cảm xúc|Cảm nhận|Nghĩ|Tâm trạng|Tâm tình)[^|\n\[【]{0,24}\|(?:\s*[^|\n\[【:：]{1,12}\|)?|[^|\n\[【:：]{1,12}\|)\s*(?=[\s\S]{20,})/, '')
+    : t;
+  text = stripThought(text);
   let face = 'neutral', action = null, tone = null;
   const tones = tonesOf(idol);
   // Tags may be Vietnamese ([Nghiêng đầu][Nhiệt tình]) — the host answers in Vietnamese,
   // so the model writes Vietnamese tags; resolve them through the idol's alias map (v7.9).
-  // Vietnamese action/tone names run long, so the cap is 12 characters, not 4.
+  // Vietnamese tags run long, and the model combines them ("[Cười nghiêng đầu]" is 15
+  // characters), so the cap is 24, not 4 — a cap of 12 let the combined tags through
+  // to the subtitle and the voice (v7.9.6).
   const canon = s => idol.tagAliases?.[s] || s;
   for (let i = 0; i < 3; i++) {
-    const m = text.match(/^[\[【]\s*([^\]】]{1,12})\s*[\]】]\s*/);
+    const m = text.match(/^[\[【]\s*([^\]】]{1,24})\s*[\]】]\s*/);
     if (!m) break;
     const k = canon(m[1]);
     if (FACES[k]) face = FACES[k];
@@ -328,8 +337,9 @@ export function parseReply(idol, raw) {
     else if (tones[k]) tone = k;
     text = text.slice(m[0].length);
   }
+  text = stripThought(text);
   // The format example's placeholder copied literally ("尾号xxxx 大家晚上好") is dropped.
-  text = scrub(text.replace(/[\[【][^\]】]{1,12}[\]】]/g, '').replace(/[（(][^）)]{0,20}[）)]/g, '').replace(/(尾号|游客)\s*[xX＊*]{4}[，,、\s]*/g, '')).trim();
+  text = scrub(text.replace(/[\[【][^\]】]{1,24}[\]】]/g, '').replace(/[（(][^）)]{0,20}[）)]/g, '').replace(/(尾号|游客)\s*[xX＊*]{4}[，,、\s]*/g, '')).trim();
   return { face, action, text, ...(tone ? { tone } : {}) };
 }
 
@@ -556,7 +566,7 @@ export function withBackup(main, backup, { mainMs = 6500, longMainMs = 20000, lo
 
 // The queue and the loop. `speak(line, event)` performs one line and resolves when it has been seen and heard.
 // `onAir()` false = off the schedule: she stays quiet, chat events wait (and go stale) instead of being voiced.
-export function createBrain({ idol, world, ask, speak, direct: directOn = false, memory = null, memes = null, news = null, learned = null, posts = null, today = null, pushes = null, rand = Math.random, viewers = () => 1, onAir = () => true, market = null, now = () => Date.now(), timeoutMs = 12000, longTimeoutMs = 30000, idleMs = 75000, joinGapMs = 45000, status, act = null, alone = () => false, heart = () => '', pageOf = () => '' }) {
+export function createBrain({ idol, world, ask, speak, direct: directOn = false, memory = null, memes = null, news = null, learned = null, posts = null, today = null, pushes = null, rand = Math.random, viewers = () => 1, onAir = () => true, market = null, now = () => Date.now(), timeoutMs = 20000, longTimeoutMs = 45000, idleMs = 75000, joinGapMs = 45000, status, act = null, alone = () => false, heart = () => '', pageOf = () => '' }) {
   const takeInnerOn = !!idol.inner;
   // what her heart (heart.mjs) last noted: her mood, why, what she is on about, how she feels about the people here
   const heartLine = (n, e) => { n = n && worn(n, (world.w.talk || []).slice(0, 10).map(t => t.text)); if (n && e?.worn?.length) n = n.split('\n').filter(l => !/^\s*盘上[:：]/.test(l) || !wornTopics([l, l, l]).some(k => e.worn.includes(k))).join('\n'); return n ? `\n【你此刻心里（只有你自己知道，不要念出来，让它决定你说话的味道）】\n${n}` : ''; };
@@ -635,6 +645,18 @@ export function createBrain({ idol, world, ask, speak, direct: directOn = false,
     if (e.kind === 'join' && e.names?.length && memory?.regulars) e.regulars = memory.regulars(e.names, n => !!pageOf(n)).slice(0, 2);
     if (!e.worn) e.worn = wornTopics((world.w.talk || []).slice(0, 20).map(t => t.text));
     const direct = !!(directOn && idol.mouth?.direct && heart?.());   // facts, not rules (factFor, idol.mouth.direct)
+    // A story chunk is already written to be read aloud: speak it straight. Asking
+    // the model to narrate every chunk costs a full model + voice round-trip per
+    // chunk, serial, so the story stalls ~1 min between lines (v7.9.6).
+    if (e.kind === 'story' && e.chunk) {
+      current = { e, abort: new AbortController(), speaking: false };
+      const direct = { ...parseReply(idol, e.chunk), source: 'story' };
+      direct.shade = shadeOf(idol, direct);
+      direct.action = took(moveFor(idol, direct, e, rand, lastMove));
+      direct.beat = beatFor(idol, direct, rand, lastBeats);
+      if (direct.beat) lastBeats = [...lastBeats, direct.beat].slice(-4);
+      return direct;
+    }
     const p = promptFor(idol, e, world.w);
     if (direct) p.text = factFor(idol, e, world.w);
     else p.text += wornReply(e, e.worn);

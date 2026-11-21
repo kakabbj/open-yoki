@@ -174,3 +174,28 @@ test('the Vietnamese thought line is never shown or read: same-line and bare-moo
   assert.equal(zh.text, 'Chào bạn nha');
   assert.equal(zh.feel, '开心');
 });
+
+test('a long combined Vietnamese tag is never shown or read, in the middle or at the start', () => {
+  assert.equal(parseReply(vietIdol, 'Túi quýt bị bỏ quên mất rồi. [Cười nghiêng đầu] Ấy, gặp nhau rồi quên luôn túi quýt.').text, 'Túi quýt bị bỏ quên mất rồi. Ấy, gặp nhau rồi quên luôn túi quýt.');
+  assert.equal(parseReply(vietIdol, '[Cười nghiêng đầu]Chào bạn nha').text, 'Chào bạn nha');
+  assert.equal(parseReply(vietIdol, '[Chăm sóc khách hàng]Bạn ơi, để Vy xem giúp').text, 'Bạn ơi, để Vy xem giúp');
+});
+
+test('a thought with two pipes is stripped whole, even behind a leading tag', () => {
+  assert.equal(parseReply(vietIdol, 'Nghĩ | Lén vui | Nhờ con mèo mà hai đứa ngồi gần nhau. Cô đặt ly nước xuống rồi kéo ghế ngồi sát anh.').text, 'Nhờ con mèo mà hai đứa ngồi gần nhau. Cô đặt ly nước xuống rồi kéo ghế ngồi sát anh.');
+  assert.equal(parseReply(vietIdol, '[Vui]Nghĩ | Lén vui | Nhờ con mèo mà hai đứa ngồi gần nhau. Cô đặt ly nước xuống rồi kéo ghế ngồi sát anh.').text, 'Nhờ con mèo mà hai đứa ngồi gần nhau. Cô đặt ly nước xuống rồi kéo ghế ngồi sát anh.');
+  assert.equal(parseReply(vietIdol, 'Cảm xúc vui nhẹ | Một bữa cơm vụng về cũng đủ thấy thương, anh nhặt rau mà mắt cứ ngó nồi cá.').text, 'Một bữa cơm vụng về cũng đủ thấy thương, anh nhặt rau mà mắt cứ ngó nồi cá.');
+});
+
+test('a story chunk is spoken straight from the library, the model is never asked', async () => {
+  const world = createWorld({ idol: vietIdol });
+  const spoken = [];
+  let asks = 0;
+  const brain = createBrain({ idol: vietIdol, world, ask: async () => { asks++; return { text: 'model reply', cost: 0 }; }, speak: async l => { spoken.push(l.text); }, viewers: () => 0 });
+  brain.add({ kind: 'story', title: 'Chiếc đèn lồng cuối phố', chunk: 'Cuối phố có một ông lão làm đèn lồng, tay ông run rồi mà đèn ông làm vẫn sáng nhất phố.', n: 1, total: 3 });
+  brain.start();
+  await new Promise(r => setTimeout(r, 200));
+  brain.stop();
+  assert.equal(asks, 0, 'the model must not be asked to narrate a pre-written chunk');
+  assert.deepEqual(spoken, ['Cuối phố có một ông lão làm đèn lồng, tay ông run rồi mà đèn ông làm vẫn sáng nhất phố.']);
+});

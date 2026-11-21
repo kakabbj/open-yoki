@@ -73,7 +73,7 @@ export function createQuiz({ questions = [], now = () => Date.now(), rand = Math
   return { start, answer, tick, state, get current() { return current; } };
 }
 
-export function createStoryteller({ stories = [], now = () => Date.now(), rand = Math.random, chunkMs = 25000 } = {}) {
+export function createStoryteller({ stories = [], now = () => Date.now(), rand = Math.random, chunkMs = 12000 } = {}) {
   const pool = () => (stories || []).filter(s => s?.title && Array.isArray(s.chunks) && s.chunks.length);
   let active = null, lastAt = 0;
   function tell(topic) {

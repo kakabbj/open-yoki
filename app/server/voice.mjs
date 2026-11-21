@@ -361,9 +361,10 @@ export function googleVoice({ dir, googleUrl = GOOGLE_TTS_URL, fetchImpl = fetch
   async function fetchChunk(part) {
     // Google throttles this unofficial endpoint in bursts (a 403 for a while,
     // then it works again) — that is why the room sometimes reads and
-    // sometimes goes silent. Retry a failed chunk a few times with backoff
-    // instead of dropping the whole line on the first refusal.
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    // sometimes goes silent. Retry a failed chunk up to five times with growing
+    // backoff instead of dropping the whole line on the first refusal: a
+    // dropped first chunk is heard as the line starting mid-sentence (v7.9.6).
+    for (let attempt = 1; attempt <= 5; attempt++) {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
@@ -373,7 +374,7 @@ export function googleVoice({ dir, googleUrl = GOOGLE_TTS_URL, fetchImpl = fetch
           if (buf.length > 100) return buf;
         }
       } catch {} finally { clearTimeout(timer); }
-      if (attempt < 3) await sleep(600 * attempt);
+      if (attempt < 5) await sleep(600 * 2 ** (attempt - 1));
     }
     return null;
   }
@@ -440,7 +441,7 @@ export function vieneuVoice({ dir, base = VIENEU_URL, voiceName = 'Ngọc Huyề
     warming = true;
     try {
       const h = await fetchImpl(`${base}/health`, { signal: AbortSignal.timeout(5000) }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
-      if (!h.loaded) await fetchImpl(`${base}/warmup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(10000) }).catch(() => null);
+      if (!h.loaded) await fetchImpl(`${base}/warmup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(120000) }).catch(() => null);
     } catch {} finally { warming = false; }
   }
   function prune(ext) {
@@ -524,7 +525,7 @@ export function splitSlip(text) {
   if (at < text.length) parts.push({ off: false, text: text.slice(at) });
   return parts.map(p => ({ ...p, text: p.text.trim() })).filter(p => p.text);
 }
-export const plainText = text => String(text).replace(SLIP_RE, '$1');
+export const plainText = text => String(text).replace(SLIP_RE, '$1').replace(/[\[【][^\]】]{1,24}[\]】]/g, '').replace(/ {2,}/g, ' ');
 // Roughly what of a line went out before she stopped at a pause (按句可停): ~230 ms a character, ended at the last
 // sentence or comma break that fits, so her own record of what she said reads like where she really stopped.
 export function saidPart(text, spokenMs, msPerChar = 230) {

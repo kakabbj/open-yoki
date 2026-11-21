@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { falVoice, doubaoVoice, edgeVoice, googleVoice, vieneuVoice, edgeVoiceId, spokenLang, EDGE_TTS_URL } from '../server/voice.mjs';
+import { falVoice, doubaoVoice, edgeVoice, googleVoice, vieneuVoice, edgeVoiceId, spokenLang, plainText, EDGE_TTS_URL } from '../server/voice.mjs';
 import { WebSocketServer } from 'ws';
 
 test('a failed voice request is retried once with the picked voice and full quality', async () => {
@@ -498,4 +498,25 @@ test('VieNeu end to end: a chat reply comes back with the sidecar wav; a dead si
     await side.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('plainText never lets a bracket tag reach the voice, even one parseReply missed', () => {
+  assert.equal(plainText('Túi quýt bị bỏ quên mất rồi. [Cười nghiêng đầu] Ấy, gặp nhau rồi quên luôn túi quýt.'), 'Túi quýt bị bỏ quên mất rồi. Ấy, gặp nhau rồi quên luôn túi quýt.');
+  assert.equal(plainText('Chào bạn nha'), 'Chào bạn nha');
+});
+
+test('Google TTS fallback: a throttled first chunk is retried until it comes back', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-google-retry-'));
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls++;
+    if (calls < 5) return { ok: false, status: 403, arrayBuffer: async () => new ArrayBuffer(0) };
+    return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array(800).buffer };
+  };
+  const v = googleVoice({ dir, fetchImpl });
+  const out = await v.say('Xin chào bạn, tôi là Vy.', 'smile', 'g3');
+  assert.equal(calls, 5);
+  assert.equal(out.url, '/audio/g3.mp3');
+  assert.equal(fs.readFileSync(path.join(dir, 'g3.mp3')).length, 800);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
