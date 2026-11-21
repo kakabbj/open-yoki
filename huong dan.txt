@@ -1,19 +1,22 @@
-HUONG DAN - OPEN LIVESTREAM v7.4
+HUONG DAN - OPEN LIVESTREAM v7.5
 ==============================
 
-v7.4 chi sua loi 405 khi Kiem tra OpenCode (v7.3 da ghi nhan buoc loi
-la "tao phien POST /session" nhung body loi trong nen chua biet tai
-sao). Gio cau noi kem theo ket qua kiem tra GET /session:
-- Neu thay "GET /session: 405 (khong co API /session)" thi serve o
-  cong 4096 KHONG CO API /session: OpenCode cua ban qua cu (ban chua
-  co API tao phien), hoac cong 4096 dang bi chuong trinh khac chiem.
-  Cach kiem tra: mo cmd go `opencode --version` roi gui so do cho
-  toi; neu ban la 1.19.x thi mo cmd go tiep
-  `netstat -ano | findstr "4096"` de xem chuong trinh nao dang giu
-  cong 4096. Neu ban OpenCode cu, cap nhat bang
-  `npm install -g opencode-ai@latest` roi chay lai Chay-Cau-Noi.bat.
-- Neu thay "GET /session: 200 (co API /session)" thi serve co API
-  nhung tao phien van 405 — chup anh dong loi do gui lai cho toi.
+v7.5 SUA DUT LOI 405 KHI KIEM TRA OPENCODE — NGUYEN NHAN DA RO:
+ban dung OpenCode v2.3.2, con cau noi cu chi biet API cua ban 1.
+O ban 2, API doi sang /api (POST /api/session, POST
+/api/session/:id/prompt, GET /api/session/:id/message) va API co them
+mat khau (serve tu sinh mot mat khau ngau nhien, hoac nhan bien
+OPENCODE_PASSWORD). Cau noi cu goi POST /session kieu ban 1 nen serve
+ban 2 tra 405 trong. Ban cu chay nhu cu: nhay dup Chay-Cau-Noi.bat
+roi Chay-Live.bat, bam Kiem tra voi nha OpenCode — cau noi tu nhan
+biet ban 1 hay 2, tu dat mat khau khi no tu chay serve, va tu chay
+serve rieng o cong 4097 neu cong 4096 dang co serve do ban chay tay.
+(Khong can go lenh gi them.)
+
+v7.4 chi them chuan doan cho loi 405: cau noi kem theo ket qua kiem tra
+GET /session (co API /session khong) de phan biet serve qua cu voi
+cong bi chuong trinh khac chiem. Chuan doan do da het tac dung vi
+nguyen nhan that la ban 2, nen v7.5 bo no, thay bang ho tro ban 2.
 
 v7.3 sua 3 thu ban bao:
 1. Man hinh live nho lai (chi con 80% chieu cao) de lay cho cho phan

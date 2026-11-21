@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { toPrompt, splitModel, extractText, openaiReply, createOpencode, createSessionAsker, createBridge, resolveOpencodeBin } from '../../tools/opencode-bridge/bridge.mjs';
+import { toPrompt, splitModel, extractText, extractTextV2, openaiReply, createOpencode, createSessionAsker, createBridge, resolveOpencodeBin } from '../../tools/opencode-bridge/bridge.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -142,34 +142,36 @@ test('bridge: a 405 names the failing serve call and keeps the plain-text body',
   msg405.close();
 });
 
-test('bridge: a serve failure adds what GET /session says (old serve or wrong program on the port)', async t => {
-  // the user's serve 405s POST /session with an EMPTY body — the label alone
-  // cannot say why. The probe tells whether the serve has the session API at
-  // all: if GET /session 405s too, the serve has no session API (OpenCode too
-  // old, or something else listening on the port).
+test('bridge: a serve failure says which API it speaks and whether the password works', async t => {
+  // the user's v2 serve 405s POST /session with an EMPTY body — the old probe
+  // (GET /session) cannot tell a v2 serve from a dead one, because v2 serves
+  // its web UI on GET /session. detect() asks /api/session first instead.
   const noApi = http.createServer((req, res) => {
     res.writeHead(405, { 'content-type': 'text/plain' });
     res.end('');
   });
   const portNoApi = await listen(noApi);
-  const opencode = createOpencode({ url: `http://127.0.0.1:${portNoApi}` });
-  const asker = createSessionAsker({ opencode });
-  await assert.rejects(() => asker.ask([{ role: 'user', content: 'Chào bạn' }]),
-    /opencode 405 \(tao phien POST \/session\):  — GET \/session: 405 \(khong co API \/session\)/);
-  noApi.close();
-  // and when the serve DOES have the API (GET returns the session list), the
-  // probe says so instead
+  try {
+    const opencode = createOpencode({ url: `http://127.0.0.1:${portNoApi}` });
+    assert.deepEqual(await opencode.detect(), { version: null, authed: false });
+    const asker = createSessionAsker({ opencode });
+    await assert.rejects(() => asker.ask([{ role: 'user', content: 'Chào bạn' }]), /opencode serve khong tra loi/);
+  } finally { noApi.close(); }
+  // and when the serve DOES speak v1 (GET /session returns the list), a 405 on
+  // the create is labelled with the version instead
   const hasApi = http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/session') { res.writeHead(200, { 'content-type': 'application/json' }); res.end('[]'); return; }
     res.writeHead(405, { 'content-type': 'text/plain' });
     res.end('');
   });
   const portHasApi = await listen(hasApi);
-  const opencode2 = createOpencode({ url: `http://127.0.0.1:${portHasApi}` });
-  const asker2 = createSessionAsker({ opencode: opencode2 });
-  await assert.rejects(() => asker2.ask([{ role: 'user', content: 'Chào bạn' }]),
-    /opencode 405 \(tao phien POST \/session\):  — GET \/session: 200 \(co API \/session\)/);
-  hasApi.close();
+  try {
+    const opencode2 = createOpencode({ url: `http://127.0.0.1:${portHasApi}` });
+    assert.deepEqual(await opencode2.detect(), { version: 'v1', authed: true });
+    const asker2 = createSessionAsker({ opencode: opencode2 });
+    await assert.rejects(() => asker2.ask([{ role: 'user', content: 'Chào bạn' }]),
+      /opencode 405 \(tao phien POST \/session\):  — serve v1/);
+  } finally { hasApi.close(); }
 });
 
 test('bridge: OpenCode down reports a Vietnamese opencode_down instead of hanging', async t => {
@@ -274,7 +276,7 @@ test('bridge: 502 says why — binary missing vs serve will not start', async t 
   const e1 = await post502(noBin);
   assert.equal(e1.type, 'opencode_down');
   assert.match(e1.message, /Khong tim thay lenh opencode/);
-  assert.match(e1.message, /npm install -g opencode-ai/);
+  assert.match(e1.message, /npm install -g @opencode\/cli/);
   // binary exists but will not start: say the manual command
   const errChild = { on(ev, fn) { if (ev === 'error') fn(new Error('spawn opencode EINVAL')); } };
   const badSpawn = createBridge({ opencode, url: `http://127.0.0.1:${deadPort}`, spawnFn: () => errChild, waitMs: 50 });
@@ -282,4 +284,196 @@ test('bridge: 502 says why — binary missing vs serve will not start', async t 
   assert.equal(e2.type, 'opencode_down');
   assert.match(e2.message, /Khong chay duoc opencode serve/);
   assert.match(e2.message, /opencode serve --port 4096/);
+});
+
+// --- OpenCode v2 (2.3.2) ---
+// A fake v2 serve, shaped after the real 2.3.2's answers: /api/session needs the
+// Basic password (401 without it), POST /session 405s with an empty body, the
+// prompt only admits the line, and the reply shows up in the message list.
+function fakeOpencodeV2({ password = 'test-password', failReply = false } = {}) {
+  const seen = { creates: [], prompts: [], switches: [], messages: 0 };
+  const sessions = new Map();
+  let n = 0;
+  const server = http.createServer((req, res) => {
+    let s = '';
+    req.on('data', c => { s += c; });
+    req.on('end', () => {
+      const send = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
+      const authed = req.headers.authorization === 'Basic ' + Buffer.from('opencode:' + password).toString('base64');
+      if (req.method === 'GET' && req.url === '/session') { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><html></html>'); return; }
+      if (req.method === 'POST' && req.url === '/session') { res.writeHead(405, { 'content-type': 'text/plain' }); res.end(''); return; }
+      if (req.url.startsWith('/api/')) {
+        if (!authed) return send(401, { _tag: 'UnauthorizedError', message: 'Authentication required' });
+        if (req.method === 'GET' && req.url === '/api/session') return send(200, { data: [...sessions.keys()].map(id => ({ id })), cursor: {} });
+        if (req.method === 'POST' && req.url === '/api/session') {
+          const body = JSON.parse(s || '{}');
+          seen.creates.push(body);
+          const id = 'ses-v2-' + (++n);
+          sessions.set(id, { messages: [] });
+          return send(200, { data: { id, title: body.title } });
+        }
+        const pm = req.url.match(/^\/api\/session\/([^/]+)\/prompt$/);
+        if (req.method === 'POST' && pm) {
+          const body = JSON.parse(s || '{}');
+          seen.prompts.push(body);
+          const sess = sessions.get(pm[1]);
+          if (!sess) return send(404, { _tag: 'SessionNotFoundError', message: 'session not found' });
+          const userMsg = { id: 'msg-u-' + n, time: { created: Date.now() }, type: 'user', text: body.text };
+          sess.messages.unshift(userMsg);
+          setTimeout(() => {
+            if (failReply) {
+              sess.messages.unshift({ id: 'msg-i-' + n, time: { created: Date.now() }, type: 'idle', outcome: 'failed', error: { type: 'provider.no-route', message: 'Unsupported package for stub/test-model: ' } });
+            } else {
+              sess.messages.unshift({ id: 'msg-a-' + n, time: { created: Date.now(), completed: Date.now() }, type: 'assistant', content: [{ type: 'text', text: 'Xin chào, tôi là Vy.' }], finish: 'stop' });
+            }
+          }, 30);
+          return send(200, { data: { id: userMsg.id, sessionID: pm[1], time: { created: Date.now() }, type: 'user', payload: { text: body.text }, delivery: 'steer' } });
+        }
+        const mm = req.url.match(/^\/api\/session\/([^/]+)\/message$/);
+        if (req.method === 'GET' && mm) {
+          seen.messages++;
+          const sess = sessions.get(mm[1]);
+          if (!sess) return send(404, { _tag: 'SessionNotFoundError', message: 'session not found' });
+          return send(200, { data: sess.messages, cursor: {} });
+        }
+        const sm = req.url.match(/^\/api\/session\/([^/]+)\/model$/);
+        if (req.method === 'POST' && sm) {
+          seen.switches.push(JSON.parse(s || '{}'));
+          if (!sessions.has(sm[1])) return send(404, { _tag: 'SessionNotFoundError', message: 'session not found' });
+          res.writeHead(204); res.end(); return;
+        }
+      }
+      return send(404, { error: 'not found' });
+    });
+  });
+  return { server, seen };
+}
+
+test('detect: v2 authed, v2 with a wrong password, v1, and nothing at all', async t => {
+  const v2 = fakeOpencodeV2();
+  const v2Port = await listen(v2.server);
+  try {
+    assert.deepEqual(await createOpencode({ url: `http://127.0.0.1:${v2Port}`, password: 'test-password' }).detect(), { version: 'v2', authed: true });
+    assert.deepEqual(await createOpencode({ url: `http://127.0.0.1:${v2Port}`, password: 'wrong' }).detect(), { version: 'v2', authed: false });
+    assert.deepEqual(await createOpencode({ url: `http://127.0.0.1:${v2Port}` }).detect(), { version: 'v2', authed: false });
+  } finally { v2.server.close(); }
+  const v1 = fakeOpencode();
+  const v1Port = await listen(v1.server);
+  try {
+    assert.deepEqual(await createOpencode({ url: `http://127.0.0.1:${v1Port}` }).detect(), { version: 'v1', authed: true });
+  } finally { v1.server.close(); }
+  const probe = http.createServer(() => {});
+  await new Promise(r => probe.listen(0, '127.0.0.1', r));
+  const deadPort = probe.address().port;
+  probe.close();
+  assert.deepEqual(await createOpencode({ url: `http://127.0.0.1:${deadPort}` }).detect(), { version: null, authed: false });
+});
+
+test('extractTextV2: finished reply, still-running, failed turn, empty', () => {
+  const done = { type: 'assistant', time: { created: 1, completed: 2 }, content: [{ type: 'text', text: 'Xin chào' }, { type: 'reasoning', text: 'suy nghi' }, { type: 'tool', name: 'x' }, { type: 'text', text: ', tôi là Vy.' }], finish: 'stop' };
+  assert.equal(extractTextV2([done]), 'Xin chào, tôi là Vy.');
+  assert.equal(extractTextV2([{ type: 'assistant', time: { created: 1 }, content: [{ type: 'text', text: 'dang go...' }] }]), null);
+  assert.equal(extractTextV2([]), null);
+  assert.equal(extractTextV2([{ type: 'user', text: 'Chào bạn' }]), null);
+  assert.throws(() => extractTextV2([{ type: 'idle', outcome: 'failed', error: { type: 'provider.no-route', message: 'Unsupported package for stub/test-model: ' } }]), /Unsupported package/);
+  // a completed idle marker after the reply does not hide it
+  assert.equal(extractTextV2([{ type: 'idle', outcome: 'completed' }, done]), 'Xin chào, tôi là Vy.');
+});
+
+test('v2 ask: model goes in at creation as {providerID, id}, system is prepended, poll returns the reply', async t => {
+  const fake = fakeOpencodeV2();
+  const fakePort = await listen(fake.server);
+  try {
+    const opencode = createOpencode({ url: `http://127.0.0.1:${fakePort}`, password: 'test-password' });
+    const asker = createSessionAsker({ opencode, pollMs: 10, pollTimeoutMs: 5000 });
+    const r = await asker.ask([{ role: 'system', content: 'Bạn là Vy.' }, { role: 'user', content: 'Chào bạn' }]);
+    assert.equal(r.text, 'Xin chào, tôi là Vy.');
+    assert.equal(fake.seen.creates.length, 1);
+    assert.deepEqual(fake.seen.creates[0].model, { providerID: 'xingchi', id: 'gpt-6.1-sol' });
+    assert.equal(fake.seen.prompts.length, 1);
+    assert.equal(fake.seen.prompts[0].text, 'Bạn là Vy.\n\nChào bạn');
+    assert.ok(fake.seen.messages >= 1, 'the reply is polled from the message list');
+  } finally { fake.server.close(); }
+});
+
+test('v2 ask: a model change switches the session model, it does not create a new one', async t => {
+  const fake = fakeOpencodeV2();
+  const fakePort = await listen(fake.server);
+  try {
+    const opencode = createOpencode({ url: `http://127.0.0.1:${fakePort}`, password: 'test-password' });
+    const asker = createSessionAsker({ opencode, pollMs: 10, pollTimeoutMs: 5000 });
+    await asker.ask([{ role: 'user', content: 'Chào bạn' }], 'xingchi/gpt-6.1-sol');
+    await asker.ask([{ role: 'user', content: 'Kể tiếp đi' }], 'gemini/gemini-3-flash');
+    assert.equal(fake.seen.creates.length, 1);
+    assert.equal(fake.seen.switches.length, 1);
+    assert.deepEqual(fake.seen.switches[0], { model: { providerID: 'gemini', id: 'gemini-3-flash' } });
+  } finally { fake.server.close(); }
+});
+
+test('v2 ask: a failed turn surfaces the provider error instead of polling forever', async t => {
+  const fake = fakeOpencodeV2({ failReply: true });
+  const fakePort = await listen(fake.server);
+  try {
+    const opencode = createOpencode({ url: `http://127.0.0.1:${fakePort}`, password: 'test-password' });
+    const asker = createSessionAsker({ opencode, pollMs: 10, pollTimeoutMs: 5000 });
+    const start = Date.now();
+    await assert.rejects(() => asker.ask([{ role: 'user', content: 'Chào bạn' }]), /Unsupported package for stub\/test-model/);
+    assert.ok(Date.now() - start < 4000, 'the failed idle marker ends the wait at once');
+  } finally { fake.server.close(); }
+});
+
+test('v2 ask: a wrong password reports 401 with the auth hint', async t => {
+  const fake = fakeOpencodeV2();
+  const fakePort = await listen(fake.server);
+  try {
+    const opencode = createOpencode({ url: `http://127.0.0.1:${fakePort}`, password: 'wrong' });
+    const asker = createSessionAsker({ opencode });
+    await assert.rejects(() => asker.ask([{ role: 'user', content: 'Chào bạn' }]), /opencode 401 \(tao phien POST \/api\/session\):.*serve v2, sai mat khau/);
+  } finally { fake.server.close(); }
+});
+
+test('bridge e2e v2: chat/completions in, the fake v2 serve answers, OpenAI shape out', async t => {
+  const fake = fakeOpencodeV2();
+  const fakePort = await listen(fake.server);
+  try {
+    const opencode = createOpencode({ url: `http://127.0.0.1:${fakePort}`, password: 'test-password' });
+    const bridge = createBridge({ opencode, url: `http://127.0.0.1:${fakePort}`, password: 'test-password' });
+    const server = http.createServer((req, res) => bridge.handle(req, res));
+    const port = await listen(server);
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'xingchi/gpt-6.1-sol', messages: [{ role: 'system', content: 'Bạn là Vy.' }, { role: 'user', content: 'Chào bạn' }] }) });
+      assert.equal(r.status, 200);
+      assert.equal((await r.json()).choices[0].message.content, 'Xin chào, tôi là Vy.');
+      assert.equal(fake.seen.creates.length, 1);
+    } finally { server.close(); }
+  } finally { fake.server.close(); }
+});
+
+test('bridge: a foreign v2 serve on the port makes it start its own on the next port', async t => {
+  // the configured port holds a v2 serve whose password the bridge does not
+  // have (the user started it by hand). The bridge must not fight it for the
+  // port: it starts its own serve on the next port, with its own password.
+  const foreignPort = 49190;
+  const ownPort = foreignPort + 1;
+  const foreign = fakeOpencodeV2({ password: 'somebody-elses-password' });
+  const own = fakeOpencodeV2({ password: 'bridge-pw' });
+  await new Promise(r => foreign.server.listen(foreignPort, '127.0.0.1', r));
+  await new Promise(r => own.server.listen(ownPort, '127.0.0.1', r));
+  try {
+    const opencode = createOpencode({ url: `http://127.0.0.1:${foreignPort}` });
+    const spawned = {};
+    const spawnFn = (bin, args, opts) => {
+      spawned.bin = bin; spawned.args = args; spawned.opts = opts;
+      return { on() {} };
+    };
+    const bridge = createBridge({ opencode, url: `http://127.0.0.1:${foreignPort}`, password: 'bridge-pw', spawnFn, waitMs: 5000, sleep: ms => new Promise(r => setTimeout(r, 10)) });
+    assert.equal(await bridge.ensureServe(), true);
+    assert.deepEqual(spawned.args, ['serve', '--port', String(ownPort), '--hostname', '127.0.0.1']);
+    assert.equal(spawned.opts.env.OPENCODE_PASSWORD, 'bridge-pw');
+    assert.equal(bridge.opencodeUrl, `http://127.0.0.1:${ownPort}`);
+  } finally {
+    foreign.server.close();
+    own.server.close();
+  }
 });
