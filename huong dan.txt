@@ -1,5 +1,10 @@
-HUONG DAN - OPEN LIVESTREAM v7
+HUONG DAN - OPEN LIVESTREAM v7.1
 ==============================
+
+v7.1 chi sua 3 file .bat (v7 chay khong duoc tren may ban): bo het
+khoi if ngoac tron, doi sang goto - cmd bao "... was unexpected at
+this time" roi tat ngay. Neu v7.1 van loi, chup anh TOAN BO cua so
+den (keo len tren de thay dong loi dau tien) gui cho toi.
 
 Ban nay co: host Vy noi tieng Viet, live mock 3 nen tang, hat / do vui /
 ke chuyen / ban hang, cai dat key tren web, noi Xingchi qua OpenCode,
@@ -86,8 +91,12 @@ duoc — day that can AVATAR=vidu + key Volc RTC (xem SETUP.md).
 -----------------
 - Mo file .bat ma bao khong thay Node: cai Node 22+ tai
   https://nodejs.org (ban Node tren may ban la 26, chay duoc).
-- Mo Chay-Cau-Noi.bat ma bao khong thay opencode: cai bang
-  npm install -g opencode-ai, hoac them thu muc OpenCode vao PATH.
+- Mo Chay-Cau-Noi.bat ma bao khong thay opencode: cau noi van chay
+  thu — neu OpenCode serve dang chay san thi van noi duoc. Neu cau
+  noi bao loi, mo OpenCode truoc roi chay lai, hoac cai bang
+  npm install -g opencode-ai.
+- Mo file .bat ma cua so tat ngay (khong kip doc loi): chay lai
+  Chay-Tat-Ca.bat roi chup anh cua so den gui cho toi.
 - Phong live mo len ma host khong noi: xem cua so server co dong
   "model off" khong — chua co key thi host chi noi cau co san,
   van la binh thuong.
