@@ -142,6 +142,36 @@ test('bridge: a 405 names the failing serve call and keeps the plain-text body',
   msg405.close();
 });
 
+test('bridge: a serve failure adds what GET /session says (old serve or wrong program on the port)', async t => {
+  // the user's serve 405s POST /session with an EMPTY body — the label alone
+  // cannot say why. The probe tells whether the serve has the session API at
+  // all: if GET /session 405s too, the serve has no session API (OpenCode too
+  // old, or something else listening on the port).
+  const noApi = http.createServer((req, res) => {
+    res.writeHead(405, { 'content-type': 'text/plain' });
+    res.end('');
+  });
+  const portNoApi = await listen(noApi);
+  const opencode = createOpencode({ url: `http://127.0.0.1:${portNoApi}` });
+  const asker = createSessionAsker({ opencode });
+  await assert.rejects(() => asker.ask([{ role: 'user', content: 'Chào bạn' }]),
+    /opencode 405 \(tao phien POST \/session\):  — GET \/session: 405 \(khong co API \/session\)/);
+  noApi.close();
+  // and when the serve DOES have the API (GET returns the session list), the
+  // probe says so instead
+  const hasApi = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/session') { res.writeHead(200, { 'content-type': 'application/json' }); res.end('[]'); return; }
+    res.writeHead(405, { 'content-type': 'text/plain' });
+    res.end('');
+  });
+  const portHasApi = await listen(hasApi);
+  const opencode2 = createOpencode({ url: `http://127.0.0.1:${portHasApi}` });
+  const asker2 = createSessionAsker({ opencode: opencode2 });
+  await assert.rejects(() => asker2.ask([{ role: 'user', content: 'Chào bạn' }]),
+    /opencode 405 \(tao phien POST \/session\):  — GET \/session: 200 \(co API \/session\)/);
+  hasApi.close();
+});
+
 test('bridge: OpenCode down reports a Vietnamese opencode_down instead of hanging', async t => {
   // a port nothing listens on: the bridge must say so, fast
   const probe = http.createServer(() => {});

@@ -79,6 +79,20 @@ export function createOpencode({ url = DEFAULT_OPENCODE_URL, fetchImpl = fetch }
     async up() {
       try { await fetchImpl(base + '/session'); return true; } catch { return false; }
     },
+    // What GET /session actually says (status + whether the body is the session
+    // list). Used to tell a 405 apart: a serve that answers GET /session with a
+    // JSON array HAS the session API, so a POST /session 405 from it is a version
+    // quirk; a serve that 405s GET too has no session API at all — OpenCode too
+    // old, or something else entirely listening on the port.
+    async probe() {
+      try {
+        const r = await fetchImpl(base + '/session');
+        const text = await r.text().catch(() => '');
+        let isArray = false;
+        try { isArray = Array.isArray(JSON.parse(text)); } catch {}
+        return { status: r.status, isArray };
+      } catch { return { status: null, isArray: false }; }
+    },
     createSession: () => call('tao phien POST /session', '/session', { method: 'POST', body: JSON.stringify({ title: 'open-livestream' }) }),
     prompt: (id, body) => call('gui tin POST /session/{id}/message', `/session/${encodeURIComponent(id)}/message`, { method: 'POST', body: JSON.stringify(body) }),
   };
@@ -101,17 +115,30 @@ export function createSessionAsker({ opencode, model = DEFAULT_MODEL } = {}) {
     const { providerID, modelID } = splitModel(useModel);
     const body = { model: { providerID, modelID }, parts: [{ type: 'text', text }], tools: {} };
     if (system) body.system = system;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const id = await ensureSession();
-      try {
-        const r = await opencode.prompt(id, body);
-        return { text: extractText(r.parts), model: useModel };
-      } catch (err) {
-        if (/opencode 404/.test(String(err?.message || '')) && attempt === 0) { sessionId = null; continue; }
-        throw err;
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const id = await ensureSession();
+        try {
+          const r = await opencode.prompt(id, body);
+          return { text: extractText(r.parts), model: useModel };
+        } catch (err) {
+          if (/opencode 404/.test(String(err?.message || '')) && attempt === 0) { sessionId = null; continue; }
+          throw err;
+        }
       }
+      throw new Error('opencode session lost');
+    } catch (err) {
+      // A serve failure with an empty body (the user's 405 came back with no
+      // body at all) says nothing by itself. Add what GET /session says, so the
+      // panel shows whether the serve has the session API at all.
+      if (/^opencode \d+/.test(String(err?.message || '')) && typeof opencode.probe === 'function') {
+        const p = await opencode.probe().catch(() => ({ status: null, isArray: false }));
+        const probe = p.status === null ? 'GET /session: khong tra loi'
+          : `GET /session: ${p.status}${p.isArray ? ' (co API /session)' : ' (khong co API /session)'}`;
+        throw new Error(`${err.message} — ${probe}`.slice(0, 240));
+      }
+      throw err;
     }
-    throw new Error('opencode session lost');
   }
   return { ask, get sessionId() { return sessionId; } };
 }
@@ -212,7 +239,7 @@ export function createBridge({ opencode, model = DEFAULT_MODEL, url = DEFAULT_OP
       }
       return send(404, { error: { message: 'not found', type: 'not_found' } });
     } catch (err) {
-      return send(502, { error: { message: String(err?.message || err).slice(0, 200), type: 'opencode_error' } });
+      return send(502, { error: { message: String(err?.message || err).slice(0, 280), type: 'opencode_error' } });
     }
   }
   return { handle, ensureServe, asker, get serveChild() { return serveChild; }, get serveError() { return serveError; } };
