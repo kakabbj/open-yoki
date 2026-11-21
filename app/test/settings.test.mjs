@@ -114,6 +114,27 @@ test('responses client: input mapping and both answer shapes', async () => {
   assert.equal((await two([{ role: 'user', content: 'hi' }])).text, 'chào bạn');
 });
 
+test('responses client: a Xingchi 403 about programming clients becomes a Vietnamese explanation, not the Chinese error', async () => {
+  const ask = responsesApi({ key: 'sk-xingchi-secret', model: 'gpt-6.1-sol', fetchImpl: stubFetch(() => ({
+    ok: false, status: 403,
+    json: { error: { message: '本站仅支持编程客户端调用使用：Codex、Claude Code、OpenCode、ZCode、Cursor' } },
+  })) });
+  await assert.rejects(ask([{ role: 'user', content: 'hi' }]), err => {
+    assert.match(err.message, /Xingchi chặn gọi trực tiếp/);
+    assert.match(err.message, /Key không sai/);
+    assert.match(err.message, /OpenRouter\/Gemini\/DeepSeek/);
+    assert.match(err.message, /OpenCode/);
+    assert.doesNotMatch(err.message, /仅支持编程客户端/);
+    assert.doesNotMatch(err.message, /sk-xingchi-secret/);
+    return true;
+  });
+  // other 403s stay raw (and key-scrubbed)
+  const other = responsesApi({ key: 'sk-xingchi-secret', model: 'm', fetchImpl: stubFetch(() => ({
+    ok: false, status: 403, json: { error: { message: 'quota exceeded for sk-xingchi-secret' } },
+  })) });
+  await assert.rejects(other([{ role: 'user', content: 'hi' }]), /responses 403: quota exceeded for \*\*\*/);
+});
+
 test('settings endpoints: save a key in the panel, the brain turns on, test hits the provider', async t => {
   const { start } = await import('../server/index.mjs');
   const dir = tmp();

@@ -427,6 +427,11 @@ export function anthropic({ key, model, base = 'https://api.anthropic.com', fetc
 
 // A /v1/responses client (Xingchi): input is the same message list, the answer is
 // output_text, or the text of the message outputs.
+// Xingchi only lets programming clients call it directly — its 403 says so in Chinese
+// (本站仅支持编程客户端调用使用). The key is not wrong when this happens; the client is
+// refused. Say so in Vietnamese, so the settings panel never shows a red Chinese line
+// the operator cannot read.
+const XINGCHI_BLOCKED = 'Xingchi chặn gọi trực tiếp, chỉ Codex/Claude Code/OpenCode/Cursor... được phép. Key không sai — đổi sang OpenRouter/Gemini/DeepSeek, hoặc nối Xingchi qua OpenCode.';
 export function responsesApi({ key, model, base = 'https://api.xingchiapi.com/v1', fetchImpl = fetch }) {
   const clean = s => String(s ?? '').split(key).join('***');
   return async function ask(messages, { long = false, signal } = {}) {
@@ -437,7 +442,11 @@ export function responsesApi({ key, model, base = 'https://api.xingchiapi.com/v1
         body: JSON.stringify({ model, input: messages.map(m => ({ role: m.role, content: m.content })), temperature: 0.9, max_output_tokens: long ? 600 : 160 }) });
     } catch (err) { throw new Error(`responses: ${clean(err?.message || err)}`.slice(0, 160)); }
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(`responses ${r.status}: ${clean(j.error?.message || j.message || '')}`.slice(0, 160));
+    if (!r.ok) {
+      const msg = clean(j.error?.message || j.message || '');
+      if (r.status === 403 && /编程客户端/.test(msg)) throw new Error(XINGCHI_BLOCKED);
+      throw new Error(`responses ${r.status}: ${msg}`.slice(0, 160));
+    }
     const text = typeof j.output_text === 'string' ? j.output_text
       : (j.output || []).filter(o => o.type === 'message').flatMap(o => o.content || []).filter(c => c.type === 'output_text' || c.type === 'text').map(c => c.text || '').join('');
     return { text, cost: 0 };

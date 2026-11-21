@@ -742,7 +742,7 @@ export async function start(env = process.env) {
         try {
           const r = await clientFor(b)([{ role: 'user', content: 'Trả lời đúng một từ: ok' }], { signal: AbortSignal.timeout(15000) });
           return json(res, 200, { ok: true, text: String(r.text || '').slice(0, 200) });
-        } catch (e) { return json(res, 200, { ok: false, error: String(e.message || e).slice(0, 160) }); }
+        } catch (e) { return json(res, 200, { ok: false, error: String(e.message || e).slice(0, 240) }); }
       }
       // Push settings (v5): where the live really goes — RTMP address + stream key per platform
       // (YouTube / Facebook / TikTok, copied from each platform's live console). Operator only.
