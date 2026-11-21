@@ -8,7 +8,7 @@ import { takeSong, LOSS } from './memes.mjs';
 export const MODEL = 'x-ai/grok-4.20';
 export const FACES = { 平静: 'neutral', 开心: 'happy', 生气: 'angry', 难过: 'sad', 害羞: 'shy', 得意: 'smug' };
 
-const PRI = { open: 75, close: 75, diaryNote: 55, market: 50, request: 25, thanks: 30, chat: 20, join: 10, idle: 5 };
+const PRI = { open: 75, close: 75, diaryNote: 55, market: 50, quizWin: 45, quiz: 40, quizEnd: 35, sing: 30, story: 30, quizBusy: 30, song: 30, request: 25, thanks: 30, chat: 20, sell: 20, join: 10, idle: 5 };
 const STALE_MS = { market: 90e3, chat: 120e3, request: 90e3, thanks: 120e3, join: 20e3, idle: 30e3 };
 const tail = a => '游客' + String(a || '').slice(-4);
 const pick = list => list[Math.floor(Math.random() * list.length)];
@@ -240,8 +240,30 @@ export function promptFor(idol, e) {
     case 'open': return { text: `【开播】你刚开播，${e.viewers} 个人在等你。跟大家打招呼，说说今天要干嘛。60 字以内。` };
     case 'close': return { text: `【下播】今天的直播时间到了，跟大家道别，告诉他们下次开播时间是${e.next}。60 字以内。` };
     case 'diaryNote': return { text: `【系统】你刚写完今天的日记，跟大家说一声，透露一点点内容吊胃口。日记开头：${e.preview}` };
+    // Show acts (v5, fork kakabbj): quiz, stories, singing and selling. The prompts are in Vietnamese
+    // because these acts belong to the Vietnamese host; the fallback lines in her config say the same
+    // thing when the model is off.
+    case 'quiz': return { text: `【Đố vui】Bạn vừa ra câu đố cho cả phòng: 「${e.question}」. Mời mọi người trả lời trong bình luận, ai đúng đầu tiên thì thắng. Nói câu đố ra một lần, ngắn gọn, hào hứng, đừng nhắc đáp án. Dưới 50 chữ.` };
+    case 'quizWin': return { text: `【Đố vui】${e.winner} vừa trả lời đúng câu 「${e.question}」: đáp án là ${e.answer}. Đây là điểm thứ ${e.score} của bạn ấy. Chúc mừng bạn ấy một câu, vui vẻ, rồi hỏi mọi người có muốn đố tiếp không. Dưới 50 chữ.` };
+    case 'quizEnd': return { text: `【Đố vui】Hết giờ, không ai trả lời đúng câu 「${e.question}」. Đáp án là ${e.answer}. Nói đáp án ra, tiếc một câu, rồi mời mọi người chơi ván sau. Dưới 50 chữ.` };
+    case 'quizBusy': return { text: `【Đố vui】Có người muốn đố tiếp nhưng ván này chưa xong, câu đang đố là 「${e.question}」. Nhắc lại câu hỏi một lần, bảo mọi người trả lời nhanh. Dưới 40 chữ.` };
+    case 'story': return { text: `【Kể chuyện】Bạn đang kể truyện 「${e.title}」 (đoạn ${e.n}/${e.total}): ${e.chunk} Kể đoạn này ra, giọng kể chuyện, đừng tóm tắt, đừng nói trước đoạn sau. Dưới 80 chữ.` };
+    case 'storyEnd': return { text: `【Kể chuyện】Truyện 「${e.title}」 vừa hết. Nói một câu kết, hỏi mọi người có muốn nghe truyện khác không. Dưới 40 chữ.` };
+    case 'sing': return { text: `【Hát】Bạn đang hát bài 「${e.title}」: ${e.verse} Hát đoạn này ra, như đang hát thật, đừng giải thích, đừng nói thêm gì khác.` };
+    case 'song': return { text: e.song?.id ? `【Hát】${e.by || 'Có người'} vừa gọi bài ${e.song.title}. Nói đã xếp bài đó lên rồi, bảo mọi người chờ nghe. Dưới 40 chữ.` : `【Hát】${e.by || 'Có người'} vừa gọi bài ${e.song?.miss} nhưng bài đó không có trong danh sách. Bảo họ gọi bài khác. Dưới 40 chữ.` };
+    case 'sell': return { text: e.product ? `【Bán hàng】Bạn giới thiệu sản phẩm: ${e.product.name}, giá ${e.priceText}. ${e.product.desc} Giới thiệu như bạn thật sự thích nó, nói giá một lần, ai muốn mua thì bấm link trong phần Sản phẩm. Đừng nói như quảng cáo, đừng đảm bảo gì. Dưới 60 chữ.` : '【Bán hàng】Bạn giới thiệu một sản phẩm trong phần Sản phẩm cho mọi người. Dưới 40 chữ.' };
   }
   return { text: '【系统】随便说一句。' };
+}
+
+// The line she says when the model is off. A kind's fallback may be a list of lines, or a function
+// of the event: a quiz question, a product price, a story chunk — the line is built from what
+// happened, not picked blind. (v5: show acts need their facts in the line even in mock mode.)
+export function fallbackLine(idol, e) {
+  const fb = idol.fallback[e.kind] || idol.fallback.idle;
+  if (typeof fb === 'function') return fb(e);
+  if (Array.isArray(fb) && fb.length) return pick(fb);
+  return '';
 }
 
 // Swearing stays mild; anything ruder the model slips in is taken out.
@@ -614,7 +636,7 @@ export function createBrain({ idol, world, ask, speak, direct: directOn = false,
       const why = String(err.message || err).slice(0, 120);
       status?.('model', false, why);
       console.warn(`model failed (${e.kind}): ${why}`);   // journal keeps the reason; health only shows the latest
-      line = { ...parseReply(idol, pick(idol.fallback[e.kind] || idol.fallback.idle)), source: 'fallback' };
+      line = { ...parseReply(idol, fallbackLine(idol, e)), source: 'fallback' };
     } finally { clearTimeout(timer); }
     line.shade ??= shadeOf(idol, line);
     line.action = took(moveFor(idol, line, e, rand, lastMove));   // a 点播 is always done, whatever the model wrote

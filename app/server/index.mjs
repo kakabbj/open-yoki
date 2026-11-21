@@ -35,8 +35,9 @@ import { createAuth, AuthError, isGuest } from './auth.mjs';
 import { liveRoom, watchGate } from './live.mjs';
 import { createMemory } from './memory.mjs';
 import { createMarket, price as fmtPrice, pct as fmtPct, ALIASES } from './market.mjs';
-import { createSquare, cleanComments, createSquareRoom, watching, coinView } from './square.mjs';
+import { createSquare, cleanComments, createSquareRoom, watching, coinView, readSquare } from './square.mjs';
 import { createSongs } from './songs.mjs';
+import { createQuiz, createStoryteller, createShop, parseCommand, priceText } from './showacts.mjs';
 import { createMemes } from './memes.mjs';
 import { createNews, createSquareFeed } from './news.mjs';
 import { createXLearn } from './xlearn.mjs';
@@ -178,11 +179,28 @@ export async function start(env = process.env) {
   const squareRoom = createSquareRoom();
   // whole songs under her voice on the evening show too, the same list as the radio's
   const showSongs = env.SHOW_SONGS === '0' ? null : createSongs({ dir: env.RADIO_SONG_DIR || path.join(dataDir, 'songs'), log: m => console.log(m) });
-  const songNote = a => a?.id ? `（点歌：《${a.title}》已经给他放上了）` : a?.miss ? `（点歌：歌单里没有《${a.miss}》）` : '';
+  // Show acts (v5): quiz, stories, shop and folk songs come from the idol's own config; an idol without
+  // them (the example) simply has no quiz, no stories and no shop.
+  const quiz = Array.isArray(idol.quiz) && idol.quiz.length ? createQuiz({ questions: idol.quiz }) : null;
+  const storyteller = Array.isArray(idol.stories) && idol.stories.length ? createStoryteller({ stories: idol.stories }) : null;
+  const shop = Array.isArray(idol.products) && idol.products.length ? createShop({ products: idol.products }) : null;
+  const lyrics = Array.isArray(idol.lyrics) ? idol.lyrics : [];
   const playNextSong = () => { const s = showSongs?.next(); if (s) square?.song(s); };
   const still = path.join(ROOT, 'public', 'art', idol.id, 'looks', 's1.jpg');
   const square = room ? createSquare({ file: path.join(dataDir, 'square.json'), bgmDir: path.join(dataDir, 'bgm'), songDir: showSongs ? (env.RADIO_SONG_DIR || path.join(dataDir, 'songs')) : '', onSongEnded: id => { if (showSongs?.current?.id === id) playNextSong(); }, room, still, clips: Object.keys(idol.bigMoves?.clips || {}).filter(k => fs.existsSync(path.join(ROOT, 'relay', 'clips', k + '.mp4'))), status, chromiumPath: chrome, tap: env.SQUARE_TAP || '',
     page: { name: idol.name, tagline: idol.tagline || '', tz, tzLabel: idol.tzName || '' } }) : null;
+  // The RTMP targets the settings panel manages (v5): read/write <data>/square.json. Keys never leave
+  // the server: GET reports only whether each platform has one. `canPush` is false in mock mode, where
+  // there is no Vidu room to push — the targets are still saved, ready for a real run.
+  const pushFile = path.join(dataDir, 'square.json');
+  const readPush = () => {
+    try {
+      const c = JSON.parse(fs.readFileSync(pushFile, 'utf8'));
+      const list = Array.isArray(c.targets) ? c.targets : (c.url ? [c] : []);
+      return list.filter(t => t && typeof t.url === 'string').map(t => ({ name: String(t.name || ''), url: t.url, hasKey: !!t.key }));
+    } catch { return []; }
+  };
+  const pushStatus = () => ({ targets: readPush(), configured: !!readSquare(pushFile), on: !!square?.on, live: !!square?.live, canPush: !!square });
   // Between shows: a voice-only radio live on Square with her voice answering chat, no Vidu (radio.mjs).
   // Her radio voice is the same Doubao voice a notch slower; the evening show keeps its own speed.
   const radioVoice = stageVoice && useDoubao ? doubaoVoice({ key: volcKey, dir: voiceDir, dailyChars, voiceId: dv.voiceId, context: dv.context, speed: radioSpeed(dv), status }) : voice;
@@ -522,6 +540,21 @@ export async function start(env = process.env) {
     }
   }
   const scheduleTimer = setInterval(() => { watchSchedule(); keepOpen(); keepAvatar(); keepSquare(); checkCredits(); if (schedule.onAir()) voice?.warm?.(); }, 15e3);
+  // Show acts tick (v5): a quiz round ends on its own, a story's next chunk comes on its own, and every
+  // 15 minutes on air she showcases one product herself — never while a quiz or a story is running.
+  let lastSellAt = Date.now();   // first showcase is 15 min after the server starts, not 5 s in
+  function showTick() {
+    if (!schedule.onAir()) return;
+    const end = quiz?.tick();
+    if (end) brain.add({ kind: 'quizEnd', question: end.question, answer: end.answer });
+    const nxt = storyteller?.tick();
+    if (nxt) brain.add(nxt.done ? { kind: 'storyEnd', title: nxt.title } : { kind: 'story', title: nxt.title, chunk: nxt.chunk, n: nxt.n, total: nxt.total });
+    if (shop && !quiz?.state().active && !storyteller?.state().active && Date.now() - lastSellAt > 15 * 60e3) {
+      const p = shop.next();
+      if (p) { lastSellAt = Date.now(); brain.add({ kind: 'sell', product: p, priceText: priceText(p) }); }
+    }
+  }
+  const showTimer = setInterval(showTick, 5000);
   // The Square feed follows her picture: starts once Vidu is up on air, stops if the address is taken away.
   function keepSquare() {
     // the show's music starts once the feed is live, and if the page ever loses it (a restart), it comes back
@@ -601,6 +634,11 @@ export async function start(env = process.env) {
       // Keep the reason with the state: 'down' on its own cannot be debugged from outside.
       routes: Object.fromEntries(Object.entries(routes).map(([k, r]) => [k, r.on ? (r.ok === false ? 'down' : 'ok') : 'off'])),
       why: Object.fromEntries(Object.entries(routes).filter(([, r]) => r.ok === false && r.err).map(([k, r]) => [k, r.err])),
+      // Show acts (v5): her shop, the quiz round, the story in progress and the song list.
+      products: shop?.list() || [],
+      quiz: quiz?.state() || null,
+      story: storyteller?.state() || null,
+      songs: showSongs ? { list: showSongs.list(), current: showSongs.current } : null,
     };
   }
   live = liveRoom({ build: snapshot, version: world.version, tickMs: 500 });
@@ -705,6 +743,40 @@ export async function start(env = process.env) {
           const r = await clientFor(b)([{ role: 'user', content: 'Trả lời đúng một từ: ok' }], { signal: AbortSignal.timeout(15000) });
           return json(res, 200, { ok: true, text: String(r.text || '').slice(0, 200) });
         } catch (e) { return json(res, 200, { ok: false, error: String(e.message || e).slice(0, 160) }); }
+      }
+      // Push settings (v5): where the live really goes — RTMP address + stream key per platform
+      // (YouTube / Facebook / TikTok, copied from each platform's live console). Operator only.
+      // GET never returns a key, only whether each platform has one. A saved key stays when the
+      // panel sends an empty key for that platform. Saving restarts a running feed on the new key;
+      // keepSquare starts it again within 15 s when the show is on air.
+      if (p === '/api/settings/push') {
+        if (!fromOperator()) return json(res, 403, { error: '没有权限' });
+        if (req.method === 'GET') return json(res, 200, pushStatus());
+        if (req.method !== 'POST') return json(res, 405, { error: 'not found' });
+        const body = await readBody(req, 8000).catch(() => ({}));
+        if (body.action === 'start') {
+          if (square && square.configured() && schedule.onAir() && avatar.onAir) await square.start().catch(e => status('square', false, String(e.message || e).slice(0, 160)));
+          return json(res, 200, pushStatus());
+        }
+        if (body.action === 'stop') { await square?.stop().catch(() => {}); return json(res, 200, pushStatus()); }
+        if (!Array.isArray(body.targets)) return json(res, 400, { error: 'bad push' });
+        const saved = (() => { try { const c = JSON.parse(fs.readFileSync(pushFile, 'utf8')); return Array.isArray(c.targets) ? c.targets : (c.url ? [c] : []); } catch { return []; } })();
+        const targets = [];
+        for (const t of body.targets.slice(0, 5)) {
+          const name = String(t?.name || '').slice(0, 24), url = String(t?.url || '').trim();
+          if (!/^rtmps?:\/\/[^\s]+$/.test(url)) continue;
+          const key = String(t?.key || '');
+          const old = saved.find(s => String(s?.name || '') === name && s?.key);
+          const use = key || old?.key || '';
+          if (!/^[\w?=&.-]{8,200}$/.test(use)) return json(res, 400, { error: 'bad push key' });
+          targets.push({ name, url, key: use });
+        }
+        if (!targets.length && body.targets.length) return json(res, 400, { error: 'bad push' });
+        let cur = {}; try { cur = JSON.parse(fs.readFileSync(pushFile, 'utf8')); } catch {}
+        fs.writeFileSync(pushFile, JSON.stringify({ targets, url: targets[0]?.url || '', key: targets[0]?.key || '', size: cur.size || '1280x720' }), { mode: 0o600 });
+        console.log('square push targets updated (' + (targets.map(t => t.name || t.url).join(', ') || 'none') + ')');
+        if (square?.on) { console.log('square feed restarting on the new key'); square.stop().catch(() => {}); }
+        return json(res, 200, pushStatus());
       }
       if (p === '/api/diary') {
         const d = world.w.diary.find(x => x.date === url.searchParams.get('date')) || world.w.diary[0];
@@ -832,7 +904,16 @@ export async function start(env = process.env) {
           if (radio?.on) { radio.chat(name, item.text); showLog({ k: 'chat', who: name, text: item.text, radio: true }); continue; }
           const asked = square?.live ? showSongs?.ask(name, item.text) : null;
           if (asked?.id && !showSongs.current?.by) playNextSong();
-          brain.add({ kind: 'chat', chatId: item.id, addr, name, text: item.text + songNote(asked), tier: 'guest', tierName: '游客', rank: null, from: 'square' });
+          // same acts as the web room: a quiz answer, a song, a story, a folk song or a product question
+          const win = quiz?.answer(name, item.text);
+          if (win) brain.add({ kind: 'quizWin', ...win });
+          else if (asked?.id) brain.add({ kind: 'song', by: name, song: asked, from: 'square' });
+          else {
+            const cmd = parseCommand({ quiz, story: storyteller, shop, lyrics }, name, item.text);
+            if (cmd) brain.add(cmd.kind === 'sell' ? { ...cmd, priceText: priceText(cmd.product) } : cmd);
+            else if (asked?.miss) brain.add({ kind: 'song', by: name, song: asked, from: 'square' });
+            else brain.add({ kind: 'chat', chatId: item.id, addr, name, text: item.text, tier: 'guest', tierName: '游客', rank: null, from: 'square' });
+          }
           heart?.feed(`【直播间 ${heart.clock()}】${name}：${item.text}`);
           showLog({ k: 'chat', who: name, text: item.text });
         }
@@ -879,7 +960,20 @@ export async function start(env = process.env) {
         const name = nicks.get(addr) || null;
         if (name) memory.seen(name);
         const item = world.chat({ addr, text, who: name, from: 'web' });
-        brain.add({ kind: 'chat', chatId: item.id, addr, name, text: item.text, tier: 'guest', tierName: '游客', rank: null });
+        // A quiz answer wins the round; a song request, a story, a song from the lyrics bank or a
+        // product question becomes its own act; anything else is plain chat for her to answer.
+        const win = quiz?.answer(name, item.text);
+        if (win) brain.add({ kind: 'quizWin', ...win });
+        else {
+          const asked = showSongs?.ask(name, item.text);
+          if (asked?.id) { if (!showSongs.current?.by) playNextSong(); brain.add({ kind: 'song', by: name, song: asked }); }
+          else {
+            const cmd = parseCommand({ quiz, story: storyteller, shop, lyrics }, name, item.text);
+            if (cmd) brain.add(cmd.kind === 'sell' ? { ...cmd, priceText: priceText(cmd.product) } : cmd);
+            else if (asked?.miss) brain.add({ kind: 'song', by: name, song: asked });
+            else brain.add({ kind: 'chat', chatId: item.id, addr, name, text: item.text, tier: 'guest', tierName: '游客', rank: null });
+          }
+        }
         heart?.feed(`【网页直播间 ${heart.clock()}】${name || '游客'}：${item.text}`);
         heardAt = Date.now(); avatar.notice?.();
         status('chat', true);
@@ -914,7 +1008,7 @@ export async function start(env = process.env) {
   brain.start();
   // Waits for the Vidu hangup to go out: Vidu bills by connected time, so exiting before it would leave her billing.
   const shutdown = async () => {
-    world.save(); memory.save(); brain.stop(); market?.stop(); live.stop(); square?.stop(); radio?.close().catch?.(() => {}); clearInterval(diaryTimer); clearInterval(saveTimer); clearInterval(scheduleTimer); server.close();
+    world.save(); memory.save(); brain.stop(); market?.stop(); live.stop(); square?.stop(); radio?.close().catch?.(() => {}); clearInterval(diaryTimer); clearInterval(saveTimer); clearInterval(scheduleTimer); clearInterval(showTimer); server.close();
     await Promise.race([Promise.all([relay?.stop(), avatar.close(), outbox?.flush()]).catch(() => {}), sleep(3000)]);
   };
   return { server, world, brain, live, avatar, schedule, shutdown, routes };

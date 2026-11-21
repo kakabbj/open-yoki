@@ -84,6 +84,25 @@ body.offline .air i { background: #4a4855; box-shadow: none; animation: none; }
 
 /* operator settings: keys for her brain, voice and face */
 .settings { margin-top: 28px; }
+/* Show acts (v5): her shop and song list in the about column. */
+.shop, .songs { margin-top: 28px; }
+.shop h2, .songs h2 { margin: 0 0 10px; font-size: 15px; font-weight: 700; }
+.products, .songlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.products li { border: 1px solid var(--edge); border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; }
+.products b { font-size: 14px; }
+.pdesc { font-size: 12px; color: var(--dusk); }
+.pprice { font-size: 13px; font-weight: 700; color: var(--amber); }
+.products a { font-size: 13px; color: var(--glow); }
+.songlist li { font-size: 13px; color: var(--dusk); }
+.now-playing { font-size: 13px; color: var(--amber); margin: 0 0 8px; }
+/* The quiz round in the talk column. */
+.quiz { border: 1px solid var(--edge); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.quiz-t { margin: 0 0 4px; font-size: 12px; color: var(--dusk); }
+.quiz-q { margin: 0; font-size: 14px; font-weight: 700; }
+.quiz-scores { margin: 6px 0 0; font-size: 12px; color: var(--dusk); }
+/* Quick show acts under the chat box. */
+.quick { display: flex; gap: 6px; margin-top: 8px; }
+.quick button { background: none; border: 1px solid var(--edge); border-radius: 99px; padding: 4px 12px; font-size: 12px; color: var(--dusk); }
 .settings h2 { margin: 0 0 10px; font-size: 15px; font-weight: 700; }
 .settings h3 { margin: 18px 0 8px; font-size: 14px; font-weight: 700; }
 .set-status { margin: 0 0 12px; font-size: 13px; color: var(--glow); min-height: 1.5em; }

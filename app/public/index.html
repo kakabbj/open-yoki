@@ -60,6 +60,19 @@
       <article id="diary"><p class="empty" data-i18n="每晚下播后她自己写一篇。">She writes one herself after every show.</p></article>
     </section>
 
+    <!-- Her shop (v5): products from her own list, with a buy link when she has one. -->
+    <section class="shop" id="shopSection" hidden aria-labelledby="shopTitle">
+      <h2 id="shopTitle" data-i18n="她的商品">Her products</h2>
+      <ul class="products" id="products"></ul>
+    </section>
+
+    <!-- The songs she can play (v5): her own files, requested with "hát bài <tên bài>". -->
+    <section class="songs" id="songsSection" hidden aria-labelledby="songsTitle">
+      <h2 id="songsTitle" data-i18n="歌单">Song list</h2>
+      <p class="now-playing" id="nowPlaying" hidden></p>
+      <ul class="songlist" id="songList"></ul>
+    </section>
+
     <!-- Operator settings: API keys for her brain, voice and face. The keys never leave
          this machine's server; the page only ever sees "saved or not". -->
     <section class="settings" id="settingsPanel" hidden aria-labelledby="settingsTitle">
@@ -79,6 +92,17 @@
       <label class="set-row"><span data-i18n="配音 ID（Doubao）">Voice ID (Doubao)</span><input id="setVoiceId" autocomplete="off"></label>
       <label class="set-row"><span>Vidu Key</span><input id="setViduKey" type="password" autocomplete="off"></label>
       <p class="set-note" data-i18n="语音和画面在重启服务器后生效">Voice and face apply after the server restarts</p>
+      <!-- Live push (v5): RTMP address + stream key per platform, so the show really goes out. -->
+      <h3 data-i18n="推流设置">Live push settings</h3>
+      <p class="set-note" data-i18n="推流地址和密钥从各平台的直播控制台复制（YouTube Studio / Facebook Live / TikTok Live Studio）">Copy the RTMP URL and stream key from each platform’s live console (YouTube Studio / Facebook Live / TikTok Live Studio)</p>
+      <div id="pushRows"></div>
+      <p class="set-note" id="pushStatus"></p>
+      <p class="set-note" id="pushMockNote" data-i18n="模拟模式：还没法推流真画面，需要 Vidu + Volc RTC 才能推流；先存 key 在这里，等跑真版时自动推。">Mock mode: no real picture to push yet — pushing needs Vidu + Volc RTC. Save the keys here and they will push automatically on a real run.</p>
+      <div class="set-btns">
+        <button type="button" id="pushSave" data-i18n="保存推流">Save push settings</button>
+        <button type="button" id="pushStart" data-i18n="开始推流">Start pushing</button>
+        <button type="button" id="pushStop" class="link" data-i18n="停止推流">Stop pushing</button>
+      </div>
       <button type="button" id="setClose" class="link" data-i18n="关闭">Close</button>
     </section>
   </section>
@@ -112,6 +136,12 @@
   <!-- Chat: web and Square lines in one stream. -->
   <section class="talk" aria-labelledby="talkTitle">
     <h2 id="talkTitle" data-i18n="弹幕">Chat</h2>
+    <!-- The quiz round in progress (v5): the question and the scores so far. -->
+    <div class="quiz" id="quizBox" hidden>
+      <p class="quiz-t" data-i18n="正在猜谜">Quiz in progress</p>
+      <p class="quiz-q" id="quizQ"></p>
+      <p class="quiz-scores" id="quizScores"></p>
+    </div>
     <ul class="chat" id="chat"></ul>
     <form class="say" id="joinForm">
       <label for="nickInput" data-i18n="起个昵称，她会这样叫你">Pick a nickname. She'll call you that</label>
@@ -128,6 +158,12 @@
         <button type="submit" data-i18n="发送">Send</button>
       </div>
     </form>
+    <!-- Quick show acts (v5): fill the chat box with the command, then send it like any chat line. -->
+    <div class="quick" id="quickBtns" hidden>
+      <button type="button" data-cmd="đố vui" data-i18n="猜谜">Quiz</button>
+      <button type="button" data-cmd="kể chuyện" data-i18n="讲故事">Tell a story</button>
+      <button type="button" data-cmd="hát bài " data-i18n="点歌">Sing a song</button>
+    </div>
     <p class="hint" id="hint"></p>
   </section>
 </div>

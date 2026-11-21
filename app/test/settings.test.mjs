@@ -163,3 +163,56 @@ test('settings endpoints: save a key in the panel, the brain turns on, test hits
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('push endpoints: save RTMP targets in the panel, keys never leak, mock cannot push', async t => {
+  const { start } = await import('../server/index.mjs');
+  const dir = tmp();
+  const app = await start({ IDOL: 'viet', MODE: 'test', DATA_DIR: dir, AVATAR: 'mock' });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const port = app.server.address().port;
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    let r = await fetch(`${base}/api/settings/push`);
+    assert.equal(r.status, 200);
+    let j = await r.json();
+    assert.deepEqual(j, { targets: [], configured: false, on: false, live: false, canPush: false });
+    // a short key is refused
+    r = await fetch(`${base}/api/settings/push`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targets: [{ name: 'youtube', url: 'rtmp://a.rtmp.youtube.com/live2', key: 'short' }] }) });
+    assert.equal(r.status, 400);
+    r = await fetch(`${base}/api/settings/push`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targets: [
+        { name: 'youtube', url: 'rtmp://a.rtmp.youtube.com/live2', key: 'fake-key-12345678' },
+        { name: 'facebook', url: 'rtmps://live-api-s.facebook.com:443/rtmp/', key: 'fake-fb-key-12345678' },
+      ] }) });
+    assert.equal(r.status, 200);
+    j = await r.json();
+    assert.equal(j.configured, true);
+    assert.equal(j.targets.length, 2);
+    assert.equal(j.targets[0].hasKey, true);
+    assert.equal(JSON.stringify(j).includes('fake-key'), false);
+    // an empty key keeps the saved one; the file on disk has both targets
+    r = await fetch(`${base}/api/settings/push`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targets: [{ name: 'youtube', url: 'rtmp://a.rtmp.youtube.com/live2', key: '' }] }) });
+    j = await r.json();
+    assert.equal(j.targets.length, 1);
+    assert.equal(j.targets[0].hasKey, true);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'square.json'), 'utf8')).targets[0].key, 'fake-key-12345678');
+    // mock mode has no Vidu room, so start is a no-op, not an error
+    r = await fetch(`${base}/api/settings/push`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start' }) });
+    assert.equal(r.status, 200);
+    assert.equal((await r.json()).live, false);
+    // the room snapshot carries the shop, the quiz and the song list
+    r = await fetch(`${base}/api/state`);
+    j = await r.json();
+    assert.equal(j.products.length, 2);
+    assert.equal(j.products[0].name.includes('ví dụ'), true);
+    assert.equal(j.quiz.active, false);
+    assert.deepEqual(j.quiz.scores, []);
+    assert.equal(j.story.active, false);
+    assert.deepEqual(j.songs, { list: [], current: null });
+  } finally {
+    await app.shutdown();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -95,7 +95,9 @@ test('the room has no coin: no market cap, launch, holders or trades in her cont
   assert.doesNotMatch(diaryPrompt(idol, newWorld().w, d), COIN);
   assert.match(diaryPrompt(idol, newWorld().w, d), /小A：晚上好/);
   const plain = promptFor(idol, { kind: 'nothing' }).text;   // removed kinds get the plain catch-all, no coin prompt
-  for (const kind of ['buy', 'sell', 'stage', 'launch', 'redpack', 'bet', 'offmic']) assert.equal(promptFor(idol, { kind }).text, plain, kind);
+  for (const kind of ['buy', 'stage', 'launch', 'redpack', 'bet', 'offmic']) assert.equal(promptFor(idol, { kind }).text, plain, kind);
+  // v5: 'sell' is back, but for the host's own products — never coins.
+  assert.doesNotMatch(promptFor(idol, { kind: 'sell', product: { name: 'Ao', desc: 'Ao thun' }, priceText: '199.000d' }).text, COIN);
 });
 
 test('an English chat line asks for an English answer, a Chinese one does not', () => {

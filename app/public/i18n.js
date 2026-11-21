@@ -2,7 +2,9 @@
 // English as its default text. English is the default; a browser whose first language is Chinese opens in Chinese,
 // Vietnamese in Vietnamese, and a choice made with the switch is remembered. Her own spoken lines stay as she said them.
 // Host-specific words (her name) are never written here: the page calls setVars({ name }) once /api/state arrives.
-const KEY = 'livehost.lang';
+// v2 of the saved choice (v5): the old key remembered a two-language switch; everyone starts again from the
+// host's own language, so a room that saved "English" on the old switch opens in Vietnamese again.
+const KEY = 'livehost.lang.v2';
 const EN = {
   '{name} · 陪你熬夜的 AI 主播': '{name} · the AI host who stays up with you',
   '{name} 是 AI 直播主播：读弹幕、记得常来的人、顺嘴聊行情，每晚在币安广场和这里直播。': '{name} is an AI live host. She reads the chat, remembers the regulars and talks about the market, every night on Binance Square and here.',
@@ -105,6 +107,17 @@ const EN = {
   '语音和画面': 'Voice and face', '配音 ID（Doubao）': 'Voice ID (Doubao)',
   '语音和画面在重启服务器后生效': 'Voice and face apply after the server restarts',
   '关闭': 'Close', '没有权限': 'No permission',
+  // show acts (v5): shop, quiz, songs, quick commands, live push
+  '她的商品': 'Her products', '买': 'Buy',
+  '正在猜谜': 'Quiz in progress', '积分榜': 'Scores',
+  '正在播': 'Now playing', '歌单': 'Song list',
+  '猜谜': 'Quiz', '讲故事': 'Tell a story', '点歌': 'Sing a song',
+  '推流设置': 'Live push settings', '推流地址（RTMP）': 'RTMP URL', '推流密钥': 'Stream key',
+  '保存推流': 'Save push settings', '开始推流': 'Start pushing', '停止推流': 'Stop pushing',
+  '推流地址和密钥从各平台的直播控制台复制（YouTube Studio / Facebook Live / TikTok Live Studio）': 'Copy the RTMP URL and stream key from each platform’s live console (YouTube Studio / Facebook Live / TikTok Live Studio)',
+  '模拟模式：还没法推流真画面，需要 Vidu + Volc RTC 才能推流；先存 key 在这里，等跑真版时自动推。': 'Mock mode: no real picture to push yet — pushing needs Vidu + Volc RTC. Save the keys here and they will push automatically on a real run.',
+  '已保存 {n} 个平台': 'Saved {n} platforms', '正在推流': 'Pushing live', '还没推流': 'Not pushing',
+  '还没填推流地址': 'No push address yet', '推流密钥不对': 'Bad stream key', '已保存推流设置': 'Push settings saved',
 };
 // Vietnamese. The film host's own lines (lead, about, off-air note, footer) are worded for her:
 // YouTube / Facebook / TikTok and films, no Binance Square, no market calls.
@@ -210,6 +223,17 @@ const VI = {
   '语音和画面': 'Giọng nói và khuôn mặt', '配音 ID（Doubao）': 'ID giọng (Doubao)',
   '语音和画面在重启服务器后生效': 'Giọng nói và khuôn mặt áp dụng khi khởi động lại server',
   '关闭': 'Đóng', '没有权限': 'Không có quyền',
+  // show acts (v5): shop, quiz, songs, quick commands, live push
+  '她的商品': 'Sản phẩm', '买': 'Mua',
+  '正在猜谜': 'Đang đố vui', '积分榜': 'Bảng điểm',
+  '正在播': 'Đang phát', '歌单': 'Danh sách bài',
+  '猜谜': 'Đố vui', '讲故事': 'Kể chuyện', '点歌': 'Hát bài',
+  '推流设置': 'Cài đặt phát live', '推流地址（RTMP）': 'Địa chỉ RTMP', '推流密钥': 'Key phát live',
+  '保存推流': 'Lưu phát live', '开始推流': 'Bắt đầu đẩy live', '停止推流': 'Dừng đẩy',
+  '推流地址和密钥从各平台的直播控制台复制（YouTube Studio / Facebook Live / TikTok Live Studio）': 'Lấy địa chỉ RTMP và key phát live trong phần live của từng nền tảng (YouTube Studio / Facebook Live / TikTok Live Studio)',
+  '模拟模式：还没法推流真画面，需要 Vidu + Volc RTC 才能推流；先存 key 在这里，等跑真版时自动推。': 'Chế độ mock: chưa đẩy được hình thật, cần Vidu + Volc RTC mới đẩy được. Cứ lưu key ở đây, chạy bản thật là tự đẩy.',
+  '已保存 {n} 个平台': 'Đã lưu {n} nền tảng', '正在推流': 'Đang đẩy live', '还没推流': 'Chưa đẩy',
+  '还没填推流地址': 'Chưa nhập địa chỉ phát live', '推流密钥不对': 'Key phát live chưa đúng', '已保存推流设置': 'Đã lưu cài đặt phát live',
 };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 

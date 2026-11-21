@@ -81,6 +81,11 @@ export function idleLine({ host = '我', lines = [] } = {}, rand = Math.random) 
 // Music between answers, so the radio never sounds empty: whole songs from <songDir>/index.json [{ id, title, artist, mood, dur }] (<id>.m4a beside it) play under her voice,
 // one after another, dipped while she talks; a viewer typing 点歌 <name> moves that song to the front.
 export const SONG_ASK = /^\s*(?:点歌|点一首|来一首|放一首|想听|播放|放)\s*[:：]?\s*《?([^》]{1,30}?)》?\s*(?:吧|呗|可以吗|好吗)?[!！。.~～]*\s*$/;
+// Vietnamese twin of SONG_ASK (v5): "hát bài Trống cơm" / "mở bài X" / "điểm bài X" / "bật bài X".
+// "bài" is required except after hát (bare "nghe"/"mở" are ordinary chat words, not requests).
+// The title is captured the same way; findSong matches it against the same list. A bare "hát bài"
+// (no title) is not a request: the title may not be the word "bài" itself.
+export const SONG_ASK_VI = /^\s*(?:hát(?:\s*bài)?|mở\s*bài|điểm\s*bài|cho\s*nghe\s*bài|bật\s*bài)\s+((?:(?!\bbài\b).){1,40}?)\s*(?:đi|nhé|nào)?[!.?~]*\s*$/i;
 export function findSong(q, songs) {
   const k = s => String(s || '').toLowerCase().replace(/[\s《》·'’\-–—_.,，。!！?？()（）]/g, '');
   const w = k(q);

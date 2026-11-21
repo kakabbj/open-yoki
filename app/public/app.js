@@ -178,6 +178,9 @@ function render(snap, prev) {
   setView(snap.avatar);
   renderBoard(snap);
   renderAir(snap);
+  renderShop(snap);
+  renderQuiz(snap);
+  renderSongs(snap);
   showLine(snap.line, snap.time);
   if (!prev || prev.chat !== snap.chat) renderChat(snap.chat);
   if (!prev || String(prev.diaryDates) !== String(snap.diaryDates)) renderDiaryDates(snap.diaryDates);
@@ -201,6 +204,29 @@ function renderBoard(snap) {
   if (last) bits.push(t('上一次猜 {coin}：{from} 到 {to}，她{verdict}。', { coin: esc(last.coin), from: money(last.price), to: last.end ? money(last.end) : '?', verdict: t(last.right ? '说对了' : '说错了') }));
   if (s?.total) bits.push(t('看盘记录 {right}/{total}', { right: s.right, total: s.total }));
   $('calls').innerHTML = bits.length ? bits.join(' ') : t('每晚开播她会猜一次行情，第二天自动对答案。不是投资建议。');
+}
+// Show acts (v5): her shop, the quiz round and the song list, all from /api/state.
+const moneyVnd = p => p.price > 0 ? p.price.toLocaleString('vi-VN') + (p.unit || 'đ') : '';
+function renderShop(snap) {
+  const list = snap.products || [];
+  $('shopSection').hidden = !list.length;
+  $('products').innerHTML = list.map(p => `<li><b>${esc(p.name)}</b>${p.desc ? `<span class="pdesc">${esc(p.desc)}</span>` : ''}<span class="pprice">${esc(moneyVnd(p))}</span>${p.link ? `<a href="${esc(p.link)}" target="_blank" rel="noopener">${t('买')}</a>` : ''}</li>`).join('');
+}
+function renderQuiz(snap) {
+  const q = snap.quiz;
+  $('quizBox').hidden = !q?.active;
+  if (q?.active) {
+    $('quizQ').textContent = q.question;
+    $('quizScores').textContent = (q.scores || []).length ? `${t('积分榜')}：${q.scores.map(s => `${s.name} ${s.points}`).join(' · ')}` : '';
+  }
+}
+function renderSongs(snap) {
+  const s = snap.songs;
+  $('songsSection').hidden = !s?.list?.length;
+  if (!s?.list?.length) return;
+  $('nowPlaying').hidden = !s.current;
+  if (s.current) $('nowPlaying').textContent = `${t('正在播')}：${s.current.title}`;
+  $('songList').innerHTML = s.list.map(x => `<li>${esc(x.title)}${x.artist ? ` — ${esc(x.artist)}` : ''}</li>`).join('');
 }
 // "20:00" in her time zone, shown in the visitor's own clock.
 function localClock(hm, tz = 8) {
@@ -266,7 +292,7 @@ async function refreshMe() {
     const r = await fetch(`/api/me?token=${token}`).catch(() => null);
     if (r?.ok) me = await r.json(); else { token = null; localStorage.removeItem(S + 'token'); }
   }
-  $('joinForm').hidden = !!me; $('sayForm').hidden = !me;
+  $('joinForm').hidden = !!me; $('sayForm').hidden = !me; $('quickBtns').hidden = !me;
   if (me) { $('meName').textContent = me.who; hint(t('你是 {name}。说话进弹幕，她挑着回。', { name: me.who })); }
 }
 $('joinForm').onsubmit = async e => {
@@ -291,6 +317,13 @@ $('moves').onclick = async e => {
   try { await post('/api/request', { token, action: b.dataset.a }); hint(t('收到，她做完手上这句就来。')); }
   catch (err) { hint(err.message, true); }
   finally { b.disabled = false; }
+};
+// Quick show acts (v5): fill the chat box with the command, then send it like any chat line.
+$('quickBtns').onclick = e => {
+  const b = e.target.closest('button[data-cmd]');
+  if (!b) return;
+  $('sayInput').value = b.dataset.cmd;
+  $('sayInput').focus();
 };
 // The first-screen button: straight to the nickname box (or the chat box once joined).
 $('goBtn').onclick = () => {
@@ -350,7 +383,7 @@ $('settingsBtn').onclick = async () => {
   const panel = $('settingsPanel');
   panel.hidden = !panel.hidden;
   if (!panel.hidden) {
-    try { await loadSettings(); setNote(''); }
+    try { buildPushRows(); await loadSettings(); await loadPush(); setNote(''); }
     catch (err) { setNote(err.message, true); }
   }
 };
@@ -387,6 +420,52 @@ $('setDel').onclick = async () => {
     fillProvider();
     setNote(t('已保存'));
   } catch (err) { setNote(err.message, true); }
+};
+
+// ---------- live push settings (v5) ----------
+let pushCache = null;
+const PLATFORMS = [['youtube', 'YouTube'], ['facebook', 'Facebook'], ['tiktok', 'TikTok']];
+function buildPushRows() {
+  $('pushRows').innerHTML = PLATFORMS.map(([id, label]) => `<label class="set-row"><span>${label} · ${t('推流地址（RTMP）')}</span><input id="pushUrl-${id}" autocomplete="off" placeholder="rtmp://…"></label><label class="set-row"><span>${label} · ${t('推流密钥')}</span><input id="pushKey-${id}" type="password" autocomplete="off" placeholder="${t('还没保存 key')}"></label>`).join('');
+}
+function fillPush() {
+  const byName = Object.fromEntries((pushCache?.targets || []).map(x => [x.name, x]));
+  for (const [id] of PLATFORMS) {
+    const cur = byName[id];
+    $('pushUrl-' + id).value = cur?.url || '';
+    $('pushKey-' + id).value = '';
+    $('pushKey-' + id).placeholder = cur?.hasKey ? t('已保存 key') : t('还没保存 key');
+  }
+  const n = (pushCache?.targets || []).length;
+  $('pushStatus').textContent = pushCache ? `${t('已保存 {n} 个平台', { n })} · ${t(pushCache.live ? '正在推流' : '还没推流')}` : '';
+  $('pushMockNote').hidden = !!pushCache?.canPush;
+}
+async function loadPush() {
+  const r = await fetch('/api/settings/push', { cache: 'no-store' });
+  if (!r.ok) throw new Error(t('出错了（{status}）', { status: r.status }));
+  pushCache = await r.json();
+  fillPush();
+}
+const pushErr = err => err.message === 'bad push key' ? t('推流密钥不对') : err.message === 'bad push' ? t('还没填推流地址') : err.message;
+$('pushSave').onclick = async () => {
+  const targets = PLATFORMS.map(([id]) => ({ name: id, url: $('pushUrl-' + id).value.trim(), key: $('pushKey-' + id).value })).filter(x => x.url);
+  setNote(t('正在保存…'));
+  try {
+    pushCache = await post('/api/settings/push', { targets });
+    for (const [id] of PLATFORMS) $('pushKey-' + id).value = '';
+    fillPush();
+    setNote(t('已保存推流设置'));
+  } catch (err) { setNote(pushErr(err), true); }
+};
+$('pushStart').onclick = async () => {
+  setNote(t('正在保存…'));
+  try { pushCache = await post('/api/settings/push', { action: 'start' }); fillPush(); setNote(t(pushCache.live ? '正在推流' : '还没推流')); }
+  catch (err) { setNote(pushErr(err), true); }
+};
+$('pushStop').onclick = async () => {
+  setNote(t('正在保存…'));
+  try { pushCache = await post('/api/settings/push', { action: 'stop' }); fillPush(); setNote(t('还没推流')); }
+  catch (err) { setNote(pushErr(err), true); }
 };
 applyStatic();
 showLang();

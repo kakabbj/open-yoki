@@ -3,10 +3,12 @@
 // 点歌 <name> puts that song next. Picking is the radio's: requests first, then the hour's moods, nothing again soon.
 import fs from 'node:fs';
 import path from 'node:path';
-import { findSong, songMoodsAt, SONG_ASK } from './radio.mjs';
+import { findSong, songMoodsAt, SONG_ASK, SONG_ASK_VI } from './radio.mjs';
 
 export function createSongs({ dir, now = () => Date.now(), rand = Math.random, log = () => {} }) {
   const list = () => { try { return (JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8')) || []).filter(s => s?.id && /^[\w-]+$/.test(s.id) && fs.existsSync(path.join(dir, s.id + '.m4a'))); } catch { return []; } };
+  // the room's song list, for /api/state: titles only, no file paths
+  const listPublic = () => list().map(s => ({ id: s.id, title: s.title, artist: s.artist || '' }));
   let asks = [], heard = [], current = null;
   function next() {
     const all = list();
@@ -25,12 +27,12 @@ export function createSongs({ dir, now = () => Date.now(), rand = Math.random, l
   }
   // a chat line that asks for a song: { title } found and queued next, { miss } not in the list, null = not a request
   function ask(who, text) {
-    const m = String(text || '').match(SONG_ASK);
+    const m = String(text || '').match(SONG_ASK) || String(text || '').match(SONG_ASK_VI);
     if (!m) return null;
     const s = findSong(m[1], list());
     if (!s) return { miss: m[1].slice(0, 20) };
     asks = [...asks.filter(a => a.id !== s.id), { id: s.id, by: String(who || '').slice(0, 16) }].slice(-5);
     return { id: s.id, title: s.title };
   }
-  return { next, ask, get current() { return current; }, get count() { return list().length; } };
+  return { next, ask, list: listPublic, get current() { return current; }, get count() { return list().length; } };
 }

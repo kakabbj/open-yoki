@@ -24,6 +24,14 @@ const viduLooks = (() => {
   try { return JSON.parse(fs.readFileSync(new URL('./vidu-looks.json', import.meta.url), 'utf8')).ids; } catch { return {}; }
 })();
 
+// Show acts (v5): the quiz bank, the stories she tells, her shop and the folk songs she sings by heart.
+// All four are plain JSON next to this file; the server (showacts.mjs) reads them off this config.
+const loadJson = f => { try { return JSON.parse(fs.readFileSync(new URL(f, import.meta.url), 'utf8')); } catch { return []; } };
+const QUIZ = loadJson('./quiz.json');
+const STORIES = loadJson('./stories.json');
+const PRODUCTS = loadJson('./products.json');
+const LYRICS = loadJson('./lyrics.json');
+
 export default {
   id: 'viet',
   coin: false,
@@ -249,7 +257,13 @@ export default {
   fallbackVoice: { voiceId: 'female-tianmei', speed: 1.0 },   // fal MiniMax, used only without a Doubao key
 
   // What she knows about the room. This host talks films, not markets: no prices, no coins.
-  now: '【Bây giờ】Bạn đang live cùng lúc trên YouTube, Facebook và TikTok, trò chuyện với khán giả về phim ngắn và phim AI. Bạn không bán gì, không tư vấn đầu tư, không nói về tiền mã hoá. Bạn nói tiếng Việt, giọng tự nhiên như tám chuyện với bạn bè; khán giả hỏi phim nào hay, nhân vật nào đáng thương, đoạn nào xúc động thì bạn bàn cùng họ.',
+  now: '【Bây giờ】Bạn đang live cùng lúc trên YouTube, Facebook và TikTok, trò chuyện với khán giả về phim ngắn và phim AI. Ngoài tám phim, bạn còn đố vui với cả phòng, kể chuyện ngắn, hát dân ca và giới thiệu sản phẩm của mình trong mục Sản phẩm (xem danh mục sản phẩm khi có người hỏi giá hoặc muốn mua). Bạn không tư vấn đầu tư, không nói về tiền mã hoá. Bạn nói tiếng Việt, giọng tự nhiên như tám chuyện với bạn bè; khán giả hỏi phim nào hay, nhân vật nào đáng thương, đoạn nào xúc động thì bạn bàn cùng họ.',
+
+  // Show acts (v5): quiz bank, stories, shop, folk-song lyrics — see the JSON files next to this config.
+  quiz: QUIZ,
+  stories: STORIES,
+  products: PRODUCTS,
+  lyrics: LYRICS,
 
   // `inner`: she thinks first (a 想 line: feeling + what she will do), carries that mood from line to line, may stay
   // silent, and reflects after each show (index.mjs closeShow). Her past is profile.mjs; everything since her first
@@ -293,5 +307,16 @@ export default {
     close: ['[平静][飞吻][温柔]Hôm nay tới đây thôi, ngủ sớm nhé, phim thì vẫn còn đó, bạn thì sẽ mệt đấy.'],
     mood: ['[平静][无][温柔]Cứ thế nhé, chúng ta nói tiếp.'],
     market: ['[得意][无][八卦]Vừa có một đoạn phim hay lắm, mọi người thấy không?', '[平静][无][吐槽]Mấy phút vừa rồi đủ thứ chuyện, tôi ngồi xem ké thôi.'],
+    // Show acts (v5): these fallbacks are functions, not lists — the line is built from what happened
+    // (the question, the winner, the price), so it still sounds right with the model off. brain.fallbackLine.
+    quiz: e => `[开心][拍手][热情]Đố vui nè: ${e.question} Ai trả lời đúng đầu tiên thì thắng nhé, nhanh tay lên nào.`,
+    quizWin: e => `[开心][比心][笑着]Đúng rồi, ${e.winner} trả lời đúng: ${e.answer}. Đây là điểm thứ ${e.score} của bạn ấy, mọi người vỗ tay nào.`,
+    quizEnd: e => `[平静][摊手][叹着气]Hết giờ rồi, không ai đoán ra. Đáp án là ${e.answer}. Ván sau mình đố tiếp nhé.`,
+    quizBusy: e => `[平静][无][慵懒]Ván này chưa xong đâu, câu đang đố là: ${e.question} Trả lời nhanh đi.`,
+    story: e => `[平静][无][温柔]Kể chuyện ${e.title}, đoạn ${e.n} trên ${e.total}: ${e.chunk}`,
+    storyEnd: e => `[开心][无][笑着]Hết truyện ${e.title} rồi. Mọi người muốn nghe truyện khác không, cứ bảo tôi.`,
+    sing: e => `[开心][无][笑着]Tôi hát bài ${e.title} nhé: ${e.verse}`,
+    song: e => e.song?.id ? `[开心][无][热情]Nhận rồi, bài ${e.song.title} sẽ phát ngay sau đây nhé.` : `[平静][无][慵懒]Bài ${e.song?.miss} không có trong danh sách của tôi, bạn gọi bài khác đi.`,
+    sell: e => `[开心][竖大拇指][热情]Hôm nay tôi giới thiệu ${e.product?.name || 'một món đồ hay'}, giá ${e.priceText || 'chưa niêm giá'}. ${e.product?.desc || ''} Ai thích thì bấm link trong phần Sản phẩm nhé.`,
   },
 };
