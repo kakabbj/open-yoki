@@ -1,10 +1,18 @@
-HUONG DAN - OPEN LIVESTREAM v7.1
+HUONG DAN - OPEN LIVESTREAM v7.3
 ==============================
 
-v7.1 chi sua 3 file .bat (v7 chay khong duoc tren may ban): bo het
-khoi if ngoac tron, doi sang goto - cmd bao "... was unexpected at
-this time" roi tat ngay. Neu v7.1 van loi, chup anh TOAN BO cua so
-den (keo len tren de thay dong loi dau tien) gui cho toi.
+v7.3 sua 3 thu ban bao:
+1. Man hinh live nho lai (chi con 80% chieu cao) de lay cho cho phan
+   Cai dat: cot trai rong hon, bam banh rang thi trang tu cuon toi
+   phan Cai dat luon.
+2. Loi 429 khi Kiem tra Gemini: gio bao ro tieng Viet "Het quota hoac
+   gui qua nhanh (429) — cho mot luc roi bam Kiem tra lai" thay vi
+   "model 429:" trong. Gemini het quota mien phi thi doi sang nha
+   khac (OpenCode/Xingchi) hoac doi quota hoi lai.
+3. Loi 405 khi Kiem tra OpenCode: gio bao ro buoc nao loi, vi du
+   "opencode 405 (tao phien POST /session): Method Not Allowed" thay
+   vi "opencode 405:" trong. Neu van thay loi nay, chup anh gui lai
+   + cho toi biet ban OpenCode cua ban (mo cmd go: opencode --version).
 
 Ban nay co: host Vy noi tieng Viet, live mock 3 nen tang, hat / do vui /
 ke chuyen / ban hang, cai dat key tren web, noi Xingchi qua OpenCode,

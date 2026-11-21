@@ -113,6 +113,35 @@ test('bridge: a 404 on the session recreates it once and the line still answers'
   fake.server.close();
 });
 
+test('bridge: a 405 names the failing serve call and keeps the plain-text body', async t => {
+  // the user's serve answered POST /session with a bare 405 ("Method Not
+  // Allowed" as plain text, not JSON) — the old client showed only
+  // "opencode 405:" with nothing after it, so nobody could tell which call
+  // failed. The label + raw body now say exactly that.
+  const plain405 = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/session') { res.writeHead(200, { 'content-type': 'application/json' }); res.end('[]'); return; }
+    res.writeHead(405, { 'content-type': 'text/plain' });
+    res.end('Method Not Allowed');
+  });
+  const port405 = await listen(plain405);
+  const opencode = createOpencode({ url: `http://127.0.0.1:${port405}` });
+  const asker = createSessionAsker({ opencode });
+  await assert.rejects(() => asker.ask([{ role: 'user', content: 'Chào bạn' }]), /opencode 405 \(tao phien POST \/session\): Method Not Allowed/);
+  plain405.close();
+  // same for the message call: session creates fine, the prompt 405s
+  const msg405 = http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/session') { res.writeHead(200, { 'content-type': 'application/json' }); res.end('[]'); return; }
+    if (req.method === 'POST' && req.url === '/session') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ id: 'ses-1' })); return; }
+    res.writeHead(405, { 'content-type': 'text/plain' });
+    res.end('Method Not Allowed');
+  });
+  const portMsg = await listen(msg405);
+  const opencode2 = createOpencode({ url: `http://127.0.0.1:${portMsg}` });
+  const asker2 = createSessionAsker({ opencode: opencode2 });
+  await assert.rejects(() => asker2.ask([{ role: 'user', content: 'Chào bạn' }]), /opencode 405 \(gui tin POST \/session\/\{id\}\/message\): Method Not Allowed/);
+  msg405.close();
+});
+
 test('bridge: OpenCode down reports a Vietnamese opencode_down instead of hanging', async t => {
   // a port nothing listens on: the bridge must say so, fast
   const probe = http.createServer(() => {});

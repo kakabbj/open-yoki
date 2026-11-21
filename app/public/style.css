@@ -19,7 +19,7 @@ button { cursor: pointer; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
 
-.room { flex: 1; display: grid; grid-template-columns: minmax(300px, 380px) 1fr minmax(300px, 380px); grid-template-areas: "about stage talk"; min-height: 0; height: calc(100dvh - 34px); }
+.room { flex: 1; display: grid; grid-template-columns: minmax(320px, 430px) 1fr minmax(300px, 380px); grid-template-areas: "about stage talk"; min-height: 0; height: calc(100dvh - 34px); }
 .about { grid-area: about; overflow-y: auto; padding: 28px 28px 24px; }
 .stage-col { grid-area: stage; position: relative; display: flex; align-items: center; justify-content: center; padding: 24px 12px; container-type: size; }
 .talk { grid-area: talk; display: flex; flex-direction: column; min-height: 0; padding: 24px 20px 18px; }
@@ -116,8 +116,9 @@ body.offline .air i { background: #4a4855; box-shadow: none; animation: none; }
 .diary article p { margin: 0 0 .5em; }
 .empty { color: var(--dusk); }
 
-/* the phone */
-.phone { position: relative; z-index: 1; aspect-ratio: 9 / 16; height: min(100cqh, 100cqw * 16 / 9); max-height: 100%; }
+/* the phone: smaller than the full column (v7.3) so the room has air around it
+   and the operator's settings, in the left column, get room to breathe */
+.phone { position: relative; z-index: 1; aspect-ratio: 9 / 16; height: min(80cqh, 100cqw * 16 / 9); max-height: 100%; }
 .screen { position: absolute; inset: 0; border-radius: 30px; overflow: hidden; background: #000; box-shadow: 0 0 0 8px #050608, 0 0 0 9px rgba(240, 185, 11, .22), 0 40px 120px rgba(0, 0, 0, .7); }
 .still, .live { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 .volc video { width: 100%; height: 100%; object-fit: cover; }

@@ -132,6 +132,48 @@ test('chat completions client: request shape, answer and cost', async () => {
   assert.deepEqual(r, { text: 'xin chào', cost: 0.02 });
 });
 
+test('chat completions client: a 429 keeps the provider detail, a bare 429 stays identifiable', async () => {
+  // JSON body with the quota detail (Gemini's usual shape)
+  const json429 = chatCompletions({ key: 'k1', model: 'm', base: 'https://api.example.com/v1', fetchImpl: async () => ({
+    ok: false, status: 429, text: async () => JSON.stringify({ error: { message: 'Quota exceeded for quota metric' } }),
+  }) });
+  await assert.rejects(() => json429([{ role: 'user', content: 'hi' }]), /model 429: Quota exceeded for quota metric/);
+  // a bare 429 with a plain-text body (no JSON at all)
+  const text429 = chatCompletions({ key: 'k1', model: 'm', base: 'https://api.example.com/v1', fetchImpl: async () => ({
+    ok: false, status: 429, text: async () => 'Too Many Requests',
+  }) });
+  await assert.rejects(() => text429([{ role: 'user', content: 'hi' }]), /model 429: Too Many Requests/);
+});
+
+test('settings endpoints: a provider 429 becomes a Vietnamese quota message, not a bare "model 429:"', async t => {
+  const { start } = await import('../server/index.mjs');
+  const dir = tmp();
+  const stub = http.createServer((req, res) => {
+    res.writeHead(429, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: { message: 'Quota exceeded for quota metric' } }));
+  });
+  await new Promise(r => stub.listen(0, '127.0.0.1', r));
+  const stubPort = stub.address().port;
+  const app = await start({ IDOL: 'viet', MODE: 'test', DATA_DIR: dir, AVATAR: 'mock' });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const port = app.server.address().port;
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    let r = await fetch(`${base}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'custom', keys: { custom: 'test-key' }, bases: { custom: `http://127.0.0.1:${stubPort}` }, models: { custom: 'test-model' } }) });
+    assert.equal(r.status, 200);
+    r = await fetch(`${base}/api/settings/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'custom' }) });
+    const j = await r.json();
+    assert.equal(j.ok, false);
+    assert.match(j.error, /Hết quota hoặc gửi quá nhanh \(429\)/);
+    assert.match(j.error, /Quota exceeded/);
+  } finally {
+    await app.shutdown();
+    stub.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('brain clients never put the key in an error message', async () => {
   const bad = stubFetch(() => ({ ok: false, status: 401, json: { error: { message: 'bad key sk-secret-123' } } }));
   for (const ask of [

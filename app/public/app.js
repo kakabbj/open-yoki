@@ -392,6 +392,9 @@ $('settingsBtn').onclick = async () => {
   if (!panel.hidden) {
     try { buildPushRows(); await loadSettings(); await loadPush(); setNote(''); }
     catch (err) { setNote(err.message, true); }
+    // the panel sits at the bottom of a long left column: bring it into view
+    // so the operator sees it at once instead of hunting for it below the fold
+    panel.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   }
 };
 $('setClose').onclick = () => { $('settingsPanel').hidden = true; };

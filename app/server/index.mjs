@@ -758,6 +758,13 @@ export async function start(env = process.env) {
           if (b.provider === 'opencode' && /fetch failed|ECONNREFUSED|Failed to fetch|socket hang up/i.test(msg)) {
             return json(res, 200, { ok: false, error: 'Không nối được tới cầu nối OpenCode ở 127.0.0.1:20129 — chạy cầu nối trước (nháy đúp Chay-Cau-Noi.bat, xem huong dan).' });
           }
+          // 429 from any provider (Gemini's free quota runs out): say so in
+          // Vietnamese, keeping the provider's own detail when it gave one.
+          const m429 = msg.match(/(?:model|responses|anthropic|openrouter|deepseek) 429:?\s*(.*)$/);
+          if (m429) {
+            const detail = (m429[1] || '').trim();
+            return json(res, 200, { ok: false, error: detail ? `Hết quota hoặc gửi quá nhanh (429): ${detail.slice(0, 200)}` : 'Hết quota hoặc gửi quá nhanh (429) — chờ một lúc rồi bấm Kiểm tra lại. Nếu vẫn 429, kiểm tra quota của key hoặc đổi sang nhà khác.' });
+          }
           return json(res, 200, { ok: false, error: msg.slice(0, 240) });
         }
       }

@@ -59,21 +59,28 @@ export function openaiReply(text, model) {
 
 // Minimal client for the OpenCode server API (opencode serve). Only the three calls
 // the bridge needs: list sessions (to check it is up), create a session, prompt it.
+// Each call is labelled, and a failed call keeps the raw body: a 405 from the serve
+// comes back as plain text ("Method Not Allowed"), not JSON, so parsing JSON only
+// would show an empty "opencode 405:" and nobody could tell which call failed.
 export function createOpencode({ url = DEFAULT_OPENCODE_URL, fetchImpl = fetch } = {}) {
   const base = String(url).replace(/\/$/, '');
-  async function call(path, opts = {}) {
+  async function call(where, path, opts = {}) {
     const r = await fetchImpl(base + path, { headers: { 'content-type': 'application/json' }, ...opts });
+    const text = await r.text().catch(() => '');
     let j = {};
-    try { j = await r.json(); } catch {}
-    if (!r.ok) throw new Error(`opencode ${r.status}: ${String(j.message || j.error?.message || j.error || '')}`.slice(0, 200));
+    try { j = JSON.parse(text); } catch {}
+    if (!r.ok) {
+      const detail = String(j.message || j.error?.message || j.error || text || '').trim();
+      throw new Error(`opencode ${r.status} (${where}): ${detail}`.slice(0, 200));
+    }
     return j;
   }
   return {
     async up() {
       try { await fetchImpl(base + '/session'); return true; } catch { return false; }
     },
-    createSession: () => call('/session', { method: 'POST', body: JSON.stringify({ title: 'open-livestream' }) }),
-    prompt: (id, body) => call(`/session/${encodeURIComponent(id)}/message`, { method: 'POST', body: JSON.stringify(body) }),
+    createSession: () => call('tao phien POST /session', '/session', { method: 'POST', body: JSON.stringify({ title: 'open-livestream' }) }),
+    prompt: (id, body) => call('gui tin POST /session/{id}/message', `/session/${encodeURIComponent(id)}/message`, { method: 'POST', body: JSON.stringify(body) }),
   };
 }
 

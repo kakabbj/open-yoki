@@ -384,6 +384,20 @@ export function deepseek({ key, model = 'deepseek-flash', temperature = 1.0, fet
   };
 }
 
+// Read an error/answer body: real fetch has .text(), the test stubs only have
+// .json(). A provider that answers with a bare status (Gemini's 429 sometimes
+// has no JSON) would otherwise show as "model 429:" with nothing after it,
+// and the operator cannot tell quota from a bad key — so keep the raw text too.
+async function readBody(r) {
+  if (typeof r.text === 'function') {
+    const text = await r.text().catch(() => '');
+    let j = {};
+    try { j = JSON.parse(text); } catch {}
+    return { text, j };
+  }
+  return { text: '', j: await r.json().catch(() => ({})) };
+}
+
 // One OpenAI-compatible /chat/completions client for every provider that speaks it
 // (Gemini's OpenAI endpoint, OpenAI itself, 9Router, a custom base). OpenRouter and
 // DeepSeek keep their own clients above (extra headers, cost estimate).
@@ -396,8 +410,8 @@ export function chatCompletions({ key, model, base, fetchImpl = fetch }) {
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, messages, temperature: 0.9, max_tokens: long ? 600 : 160 }) });
     } catch (err) { throw new Error(`model: ${clean(err?.message || err)}`.slice(0, 160)); }
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(`model ${r.status}: ${clean(j.error?.message || j.message || '')}`.slice(0, 160));
+    const { text, j } = await readBody(r);
+    if (!r.ok) throw new Error(`model ${r.status}: ${clean(j.error?.message || j.message || text)}`.slice(0, 160));
     return { text: j.choices?.[0]?.message?.content || '', cost: j.usage?.cost || 0 };
   };
 }
@@ -419,8 +433,8 @@ export function anthropic({ key, model, base = 'https://api.anthropic.com', fetc
         headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
         body: JSON.stringify({ model, ...(sys.length ? { system: sys.join('\n\n') } : {}), messages: rest, temperature: 0.9, max_tokens: long ? 600 : 160 }) });
     } catch (err) { throw new Error(`anthropic: ${clean(err?.message || err)}`.slice(0, 160)); }
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(`anthropic ${r.status}: ${clean(j.error?.message || '')}`.slice(0, 160));
+    const { text, j } = await readBody(r);
+    if (!r.ok) throw new Error(`anthropic ${r.status}: ${clean(j.error?.message || text)}`.slice(0, 160));
     return { text: (j.content || []).filter(c => c.type === 'text').map(c => c.text || '').join(''), cost: 0 };
   };
 }
@@ -441,9 +455,9 @@ export function responsesApi({ key, model, base = 'https://api.xingchiapi.com/v1
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, input: messages.map(m => ({ role: m.role, content: m.content })), temperature: 0.9, max_output_tokens: long ? 600 : 160 }) });
     } catch (err) { throw new Error(`responses: ${clean(err?.message || err)}`.slice(0, 160)); }
-    const j = await r.json().catch(() => ({}));
+    const { text: bodyText, j } = await readBody(r);
     if (!r.ok) {
-      const msg = clean(j.error?.message || j.message || '');
+      const msg = clean(j.error?.message || j.message || bodyText);
       if (r.status === 403 && /编程客户端/.test(msg)) throw new Error(XINGCHI_BLOCKED);
       throw new Error(`responses ${r.status}: ${msg}`.slice(0, 160));
     }
