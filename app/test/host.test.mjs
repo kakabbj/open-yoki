@@ -18,6 +18,17 @@ Object.defineProperty(globalThis, 'navigator', { value: { languages: ['en'] }, c
 globalThis.localStorage = { getItem: () => 'en', setItem() {} };
 const { dict } = await import('../public/i18n.js');
 const idol = (await import('../idols/example/config.mjs')).default;
+// Brain-loop tests used to wait a fixed 60-80 ms and then assert on asked[] / sys[],
+// which flakes under load (the loop is fast in isolation: 11 asks in 80 ms, but a
+// busy test runner can starve it). Poll for the condition instead, up to 2 s.
+async function waitFor(fn, timeoutMs = 2000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (fn()) return true;
+    await new Promise(r => setTimeout(r, 10));
+  }
+  return fn();
+}
 const read = f => readFileSync(new URL(f, import.meta.url), 'utf8');
 const han = /[一-龥]/;
 const w = { stage: 0, mcapUsd: 0, mood: 'calm', top: null, exes: [], recent: [] };
@@ -350,7 +361,7 @@ test('quiet room: no hooks or timed segments, she is just told the room is quiet
     ask: async msgs => { if (!/【直播间】.*(刚有人进来|刚进来)|刚有人进了直播间/.test(msgs[1].content)) asked.push(msgs[1].content); return { text: '[开心][无][热情]好家伙今晚有点东西啊', cost: 0 }; },
     speak: async (l, e) => { if (e.kind === 'join') return; said.push(l); t += 60 * 60e3; await new Promise(r => setTimeout(r, 2)); } });
   brain.start();
-  await new Promise(r => setTimeout(r, 80));
+  await waitFor(() => asked.length > 3);
   brain.stop();
   assert.ok(!idol.hooks && !idol.segments && !idol.idleNote);
   assert.match(asked[0], /【刚看到的快讯】币安将上线某新币/);
@@ -402,7 +413,7 @@ test('speech: line length varies per line, the old fixed caps are gone, a quiet 
     ask: async msgs => { if (!/【直播间】.*(刚有人进来|刚进来)|刚有人进了直播间/.test(msgs[1].content)) asked.push(msgs[1].content); return { text: '[开心][无][热情]不对不对，我再看一眼', cost: 0 }; },
     speak: async (l, e) => { await new Promise(r => setTimeout(r, 2)); } });
   brain.start();
-  await new Promise(r => setTimeout(r, 60));
+  await waitFor(() => asked.length >= 3);
   brain.stop();
   assert.match(asked[0], /【接着聊】.*今晚这根大阳线有点吓人/);
   assert.doesNotMatch(asked[0], /\d+ 字以内/);
@@ -573,7 +584,7 @@ test('soul: she thinks first, her mood carries to the next line, and a quiet mom
     speak: async (l, e) => { said.push(l); t += 60e3; await new Promise(r => setTimeout(r, 2)); },
     act: async (l, e) => { acted.push(l); t += 60e3; await new Promise(r => setTimeout(r, 2)); } });
   brain.start();
-  await new Promise(r => setTimeout(r, 60));
+  await waitFor(() => sys.length >= 3);
   brain.stop();
   assert.doesNotMatch(sys[0], /【你此刻的心情】\S+（/);
   assert.match(sys[1], /【你此刻的心情】难过（1 分钟了，想起他爆仓那阵）/);

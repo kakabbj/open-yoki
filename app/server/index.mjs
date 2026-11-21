@@ -760,7 +760,7 @@ export async function start(env = process.env) {
         if (req.method === 'GET' && p === '/api/square/outbox') return json(res, 200, { items: outbox.take() });
         if (req.method === 'POST' && p === '/api/square/outbox/done') return json(res, 200, { ok: outbox.settle(await readBody(req, 4000)) });
       }
-      if (req.method === 'POST' && p === '/api/square/comments') {
+      if (req.method === 'POST' && (p === '/api/square/comments' || p === '/api/ingest/comments')) {
         if (!fromReader()) return json(res, 403, { error: 'bad key' });
         const items = cleanComments((await readBody(req, 16000)).items, { seen: squareSeen, nickOf });
         for (const { name, text } of items) {
@@ -785,7 +785,7 @@ export async function start(env = process.env) {
       }
       // Her Square room's own numbers and walk-ins: the ops room reader takes them off the room page's chat socket, with
       // a slower poll as the backup. A walk-in is greeted by name (brain folds a crowd).
-      if (req.method === 'POST' && p === '/api/square/room') {
+      if (req.method === 'POST' && (p === '/api/square/room' || p === '/api/ingest/room')) {
         if (!fromReader()) return json(res, 403, { error: 'bad key' });
         const { joins, thanks, ended, warned } = squareRoom.take(await readBody(req, 16000), nickOf);
         for (const name of joins) showLog({ k: 'join', who: name, online: viewersNow() });
