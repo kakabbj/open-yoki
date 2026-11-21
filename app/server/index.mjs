@@ -714,21 +714,26 @@ export async function start(env = process.env) {
         fs.writeFileSync(sf, JSON.stringify({ at: Date.now(), ...body }), { mode: 0o600 }); fs.chmodSync(sf, 0o600);
         return json(res, 200, { ok: true, cookies: (body.cookies || []).length });
       }
-      // Each Square live has its own push key; the extension or the ops keeper reads it and this writes it where the
+      // Each live has its own push key; the extension or the ops keeper reads it and this writes it where the
       // feed looks (same file as deploy/set-square.sh). Ignored if unchanged.
-      if (req.method === 'POST' && p === '/api/square/push') {
+      // Multi-platform (v2): also accepts {"targets": [{"name": "youtube", "url": "rtmp://…", "key": "…"}, …]}
+      // to push the same feed to YouTube + Facebook + TikTok at once (see server/square.mjs).
+      if (req.method === 'POST' && (p === '/api/square/push' || p === '/api/ingest/push')) {
         if (!fromReader()) return json(res, 403, { error: 'bad key' });
-        const { url: pushUrl, key, restart } = await readBody(req, 4000);
-        if (!/^rtmps?:\/\/[^\s]+$/.test(pushUrl || '') || !/^[\w?=&.-]{8,200}$/.test(key || '')) return json(res, 400, { error: 'bad push' });
+        const body = await readBody(req, 8000);
+        const { url: pushUrl, key, restart } = body;
+        const targets = (Array.isArray(body.targets) ? body.targets : (pushUrl ? [{ name: body.name || '', url: pushUrl, key }] : []))
+          .filter(t => /^rtmps?:\/\/[^\s]+$/.test(t.url || '') && /^[\w?=&.-]{8,200}$/.test(t.key || ''));
+        if (!targets.length) return json(res, 400, { error: 'bad push' });
         const qf = path.join(dataDir, 'square.json');
         let cur = {}; try { cur = JSON.parse(fs.readFileSync(qf, 'utf8')); } catch {}
-        if (cur.url === pushUrl && cur.key === key) {
-          // the keeper hands the same key again with restart when Square stops getting a picture
+        if (JSON.stringify(cur.targets || [{ url: cur.url, key: cur.key }]) === JSON.stringify(targets)) {
+          // the keeper hands the same key again with restart when a platform stops getting a picture
           if (restart && square?.on) { console.log('square feed restarting on request'); square.stop().catch(() => {}); }
           return json(res, 200, { ok: true, same: true, restarted: !!(restart && square) });
         }
-        fs.writeFileSync(qf, JSON.stringify({ url: pushUrl, key, size: cur.size || '720x1280' }), { mode: 0o600 });
-        console.log('square push key updated');
+        fs.writeFileSync(qf, JSON.stringify({ targets, url: targets[0].url, key: targets[0].key, size: cur.size || '1280x720' }), { mode: 0o600 });
+        console.log('square push key updated (' + targets.map(t => t.name || t.url).join(', ') + ')');
         // A new live has a new key; a feed still pushing to the old one leaves the new live black. Stop it; keepSquare
         // starts it again on the new key within 15 s.
         if (square?.on) { console.log('square feed restarting on the new key'); square.stop().catch(() => {}); }

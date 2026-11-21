@@ -16,26 +16,39 @@ const STALL_MS = 15000;
 // face (Oswald). Both are SIL OFL fonts in relay/fonts; the page falls back to system fonts without them.
 const FONTS = { '/font/kai.ttf': 'kai.ttf', '/font/num.ttf': 'num.ttf' };
 
+// Multi-platform (v2, fork kakabbj): square.json can now hold several RTMP targets,
+// e.g. YouTube + Facebook + TikTok at once:
+//   {"targets": [{"name": "youtube", "url": "rtmp://…", "key": "…"},
+//                {"name": "facebook", "url": "rtmp://…", "key": "…"},
+//                {"name": "tiktok", "url": "rtmp://…", "key": "…"}], "size": "1280x720"}
+// The old single-target shape {"url", "key"} still works and becomes targets[0].
+// `target` (first target) is kept for callers that only know one destination.
+const validTarget = t => t && /^rtmps?:\/\/[^\s]+$/.test(t.url || '') && t.key;
 export function readSquare(file) {
   try {
     const c = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!/^rtmps?:\/\/[^\s]+$/.test(c.url || '') || !c.key) return null;
+    const list = Array.isArray(c.targets) && c.targets.length ? c.targets.filter(validTarget)
+      : validTarget(c) ? [c] : [];
+    if (!list.length) return null;
     const [width, height] = String(c.size || '720x1280').split('x').map(Number);
     // fps 24 is what Vidu sends; 25 made the encoder repeat a frame every second.
-    return { target: c.url.replace(/\/+$/, '') + '/' + c.key, width: width || 720, height: height || 1280, fps: Number(c.fps) || 24, kbps: Number(c.kbps) || 3000 };
+    const targets = list.map(t => ({ name: t.name || '', target: t.url.replace(/\/+$/, '') + '/' + t.key }));
+    return { target: targets[0].target, targets, width: width || 720, height: height || 1280, fps: Number(c.fps) || 24, kbps: Number(c.kbps) || 3000 };
   } catch { return null; }
 }
 
 // tap (mpegts: matroska fails its header inside tee): also write exactly what goes out to a local file, to check voice
 // against mouth and timing (SQUARE_TAP).
-export function squareArgs({ target, fps = 24, kbps = 3000, tap = '' }) {
+export function squareArgs({ target, targets = null, fps = 24, kbps = 3000, tap = '' }) {
+  const outs = (targets?.length ? targets : [{ target }]).map(t => t.target);
+  const teeOuts = [...outs.map(t => `[f=flv]${t}`), ...(tap ? [`[f=mpegts]${tap}`] : [])];
   return ['-loglevel', 'warning', '-fflags', '+genpts', '-i', 'pipe:0',
     '-map', '0:v', '-map', '0:a',
     // 2 s keyframes and a capped bitrate: what live platforms ask of an OBS push.
     '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-r', String(fps), '-g', String(fps * 2), '-keyint_min', String(fps * 2), '-sc_threshold', '0',
     '-b:v', kbps + 'k', '-maxrate', kbps + 'k', '-bufsize', kbps * 2 + 'k', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
-    ...(tap ? ['-f', 'tee', [`[f=flv]${target}`, `[f=mpegts]${tap}`].join('|')] : ['-f', 'flv', target])];
+    ...(teeOuts.length > 1 ? ['-f', 'tee', teeOuts.join('|')] : ['-f', 'flv', outs[0]])];
 }
 
 export function createSquare({ file, bgmDir = '', songDir = '', room, still = '', clips = [], status, ffmpeg = 'ffmpeg', chromiumPath, log = console.log, tap = '', onSongEnded = null, page = {} }) {
@@ -81,7 +94,7 @@ export function createSquare({ file, bgmDir = '', songDir = '', room, still = ''
         if (!me.ff) {
           me.ff = spawn(ffmpeg, squareArgs({ ...cfg, tap: tap && tap.replace('%t', Date.now()) }), { stdio: ['pipe', 'ignore', 'pipe'] });
           // ffmpeg prints the target on errors; never let a stream key reach the log.
-          me.ff.stderr.on('data', d => { const s = String(d).split(cfg.target).join('rtmp://…'); log('square ffmpeg: ' + s.trim().slice(0, 200)); });
+          me.ff.stderr.on('data', d => { let s = String(d); for (const t of cfg.targets || [{ target: cfg.target }]) s = s.split(t.target).join('rtmp://…'); log('square ffmpeg: ' + s.trim().slice(0, 200)); });
           me.ff.stdin.on('error', () => {});
           me.ff.on('exit', code => { if (run === me) { status?.('square', false, 'ffmpeg exited ' + code); restart(me); } });
         }
