@@ -1,5 +1,27 @@
-HUONG DAN - OPEN LIVESTREAM v7.8
+HUONG DAN - OPEN LIVESTREAM v7.9
 ==============================
+
+v7.9 TIM RA LY DO THAT SU "KHONG CO LOI NOI NAO":
+Ban bao khong co tieng du phong bao "Giong noi OK" — vi dong do
+NOI DOI: no chi hien OK khi chua co loi nao bao ve, ke ca khi
+server CU (ban truoc v7.6) van dang chay va HOAN TOAN KHONG CO
+giong Edge. Ban nay sua tan goc:
+- Phong hien SO PHIEN BAN duoi man hinh live (vd "v7.9"). Neu ban
+  thay so cu (v7.5 tro xuong) thi chac chan server cu van dang
+  chay — do la ly do khong co tieng.
+- Neu khong co giong nao thi phong bao "Giong noi Tat", khong bao
+  OK nua.
+- Chay Chay-Live.bat trong khi server cu van mo: cua so moi bao
+  thang tieng Viet "Cong 4370 da co server cu dang chay — tat het
+  cac cua so den cu roi chay lai", khong chet lang nua.
+DE CHAY DUNG BAN MOI (chi lam 1 lan nay): tat HET cac cua so den
+"Open Livestream" dang mo, roi nhay dup Chay-Live.bat MỘT LAN.
+Mo phong len, nhin duoi man hinh live phai thay "v7.9" va
+"Giong noi OK" — luc do chat "hi" la Vy vua tra loi vua co tieng.
+- Sua them: model doi khi viet nhan hanh dong bang tieng Viet
+  ([Nghieng dau][Nhiet tinh]) nen phu de hien ca dau [ ] va khong
+  lam dong tac — gio nhan tieng Viet duoc dich ve dung ten goc,
+  dong tac chay binh thuong, dau [ ] khong con hien trong phu de.
 
 v7.8 TIENG BAT SAN KHI MO PHONG (khong can bam nut tieng nua):
 ban v7.7 sua dung phan giong doc tren server, nhung phong web mo

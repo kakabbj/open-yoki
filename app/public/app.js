@@ -189,6 +189,7 @@ function render(snap, prev) {
   const html = moves.map(k => `<button type="button" data-a="${esc(k)}">${esc(t(k))}</button>`).join('');
   if ($('moves').innerHTML !== html) $('moves').innerHTML = html;
   $('routes').innerHTML = Object.entries(snap.routes || {}).filter(([k]) => ROUTE_NAMES[k]).map(([k, v]) => `<span class="route ${v}" title="${esc(snap.why?.[k] || '')}">${t(ROUTE_NAMES[k])} ${t(ROUTE_STATE[v] || v)}</span>`).join('');
+  $('appVersion').textContent = snap.version ? `v${snap.version}` : '';
 }
 // The Binance board she reads from, and her market notebook: tonight's guess, the last answer, the record. No money
 // is involved; the guess is checked against the price a day later.

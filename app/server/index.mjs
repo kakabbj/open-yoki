@@ -62,6 +62,11 @@ process.on('uncaughtException', (e) => {
 });
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+// Release version (app/VERSION, bumped per release): shown in the room footer and
+// /api/state so a screenshot always says which build is actually running. v7.9:
+// the "no speech" reports were an old server still holding port 4370 — no Edge voice
+// at all in that build — while the room still said voice OK.
+const APP_VERSION = (() => { try { return fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim(); } catch { return '?'; } })();
 // constant-time check of a shared key sent in a header
 const keyOk = (got, want) => { const k = String(got || ''); return !!want && k.length === want.length && timingSafeEqual(Buffer.from(k), Buffer.from(want)); };
 
@@ -137,12 +142,14 @@ export async function start(env = process.env) {
   if (voiceEngine === 'fal' && !falKey) voiceEngine = 'edge';
   const useDoubao = voiceEngine === 'doubao';
   const useEdge = voiceEngine === 'edge';
-  routes.voice.on = env.VOICE_OFF !== '1';
   const voiceDir = path.join(dataDir, 'audio'), dailyChars = Number(env.TTS_DAILY_CHARS || 60000);
-  const stageVoice = !routes.voice.on ? null
+  const stageVoice = env.VOICE_OFF === '1' ? null
     : useDoubao ? doubaoVoice({ key: volcKey, dir: voiceDir, dailyChars, voiceId: dv.voiceId, context: dv.context, speed: dv.speed || 0, tones: dv.tones || {}, status })
     : useEdge ? edgeVoice({ dir: voiceDir, voiceId: edgeVoiceId(vk.edgeVoice || env.EDGE_VOICE || ''), wsUrl: env.EDGE_TTS_URL || undefined, status })
     : falVoice({ key: falKey, dir: voiceDir, dailyChars, voiceId: idol.fallbackVoice.voiceId, speed: idol.fallbackVoice.speed, status });
+  // No voice engine at all (old builds had none without a key): the room must say off,
+  // not ok — 'ok' with no engine is what hid the old-server-still-running case in v7.8.
+  routes.voice.on = !!stageVoice;
   const voice = stageVoice;
   // With a DeepSeek key the mouth talks to DeepSeek directly (thinking off, MOUTH_DS model) and reads a page of facts
   // (brain.mjs factFor, idol.mouth.direct); the chosen provider backs it up. MOUTH_DIRECT=0 uses the chosen provider only.
@@ -630,7 +637,7 @@ export async function start(env = process.env) {
   function snapshot() {
     const w = world.w;
     return {
-      time: Date.now(), mode,
+      time: Date.now(), mode, version: APP_VERSION,
       idol: { id: idol.id, name: idol.name, nameEn: idol.nameEn, short: idol.short, square: idol.square?.handle || idol.square?.url ? idol.square : null, x: idol.x || null, tg: idol.tg?.link ? idol.tg : null, site: idol.site || '', lang: idol.lang, shape: idol.avatar.shape || 'tall', actions: Object.fromEntries(Object.entries(idol.actions).filter(([, a]) => !a.daily).map(([k, a]) => [k, a.fx])) },
       stage: w.stage, stages: STAGES.map(s => ({ key: s.key, name: s.name })),
       mood: w.mood, moodName: MOODS[w.mood],
@@ -1055,6 +1062,10 @@ export async function start(env = process.env) {
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
   const port = Number(process.env.PORT || 4370);
   const app = await start();
-  app.server.listen(port, process.env.HOST || '127.0.0.1', () => console.log(`livehost (${process.env.IDOL || 'example'}, ${process.env.MODE || 'show'}) on http://127.0.0.1:${port}  model=${app.routes.model.on} voice=${app.routes.voice.on} avatar=${app.avatar.kind}`));
+  app.server.on('error', err => {
+    if (err.code === 'EADDRINUSE') { console.error(`Cong ${port} da co server cu dang chay — tat het cac cua so den 'Open Livestream' cu roi chay lai file Chay-Live.bat.`); process.exit(1); }
+    throw err;
+  });
+  app.server.listen(port, process.env.HOST || '127.0.0.1', () => console.log(`livehost v${APP_VERSION} (${process.env.IDOL || 'example'}, ${process.env.MODE || 'show'}) on http://127.0.0.1:${port}  model=${app.routes.model.on} voice=${app.routes.voice.on} avatar=${app.avatar.kind}`));
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, async () => { await app.shutdown(); process.exit(0); });
 }

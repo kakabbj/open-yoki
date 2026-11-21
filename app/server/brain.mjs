@@ -293,16 +293,21 @@ export function parseReply(idol, raw) {
   let text = String(raw || '').trim().replace(/^["“]|["”]$/g, '');
   let face = 'neutral', action = null, tone = null;
   const tones = tonesOf(idol);
+  // Tags may be Vietnamese ([Nghiêng đầu][Nhiệt tình]) — the host answers in Vietnamese,
+  // so the model writes Vietnamese tags; resolve them through the idol's alias map (v7.9).
+  // Vietnamese action/tone names run long, so the cap is 12 characters, not 4.
+  const canon = s => idol.tagAliases?.[s] || s;
   for (let i = 0; i < 3; i++) {
-    const m = text.match(/^[\[【]\s*([^\]】]{1,4})\s*[\]】]\s*/);
+    const m = text.match(/^[\[【]\s*([^\]】]{1,12})\s*[\]】]\s*/);
     if (!m) break;
-    if (FACES[m[1]]) face = FACES[m[1]];
-    else if (idol.actions[m[1]]) action = m[1];
-    else if (tones[m[1]]) tone = m[1];
+    const k = canon(m[1]);
+    if (FACES[k]) face = FACES[k];
+    else if (idol.actions[k]) action = k;
+    else if (tones[k]) tone = k;
     text = text.slice(m[0].length);
   }
   // The format example's placeholder copied literally ("尾号xxxx 大家晚上好") is dropped.
-  text = scrub(text.replace(/[\[【][^\]】]{1,6}[\]】]/g, '').replace(/[（(][^）)]{0,20}[）)]/g, '').replace(/(尾号|游客)\s*[xX＊*]{4}[，,、\s]*/g, '')).trim();
+  text = scrub(text.replace(/[\[【][^\]】]{1,12}[\]】]/g, '').replace(/[（(][^）)]{0,20}[）)]/g, '').replace(/(尾号|游客)\s*[xX＊*]{4}[，,、\s]*/g, '')).trim();
   return { face, action, text, ...(tone ? { tone } : {}) };
 }
 

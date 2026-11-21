@@ -153,3 +153,9 @@ test('a Chinese reply from a Vietnamese host is rewritten once in Vietnamese', a
   assert.equal(calls, 2);
   assert.equal(spoken[0].text, 'Chào bạn nha');
 });
+
+test('Vietnamese tags from a Vietnamese host resolve to the Chinese tag vocabulary', () => {
+  assert.deepEqual(parseReply(vietIdol, '[Vui][Nghiêng đầu][Nhiệt tình]Chào bạn nha'), { face: 'happy', action: '歪头', text: 'Chào bạn nha', tone: '热情' });
+  assert.equal(parseReply(vietIdol, 'Chào bạn [Vẫy tay] nha').text, 'Chào bạn nha');
+  assert.deepEqual(parseReply(vietIdol, '[平静][无][客服]Bạn ơi, đi ngủ đi'), { face: 'neutral', action: null, text: 'Bạn ơi, đi ngủ đi', tone: '客服' });
+});
