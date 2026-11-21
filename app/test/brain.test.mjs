@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld } from '../server/world.mjs';
-import { createBrain, parseReply, defaultAction, personaOf, promptFor, factFor, contextFor, diaryPrompt, fitLength } from '../server/brain.mjs';
+import { createBrain, parseReply, takeInner, defaultAction, personaOf, promptFor, factFor, contextFor, diaryPrompt, fitLength } from '../server/brain.mjs';
 import idol from '../idols/example/config.mjs';
 
 const A = 'guest-' + 'a'.repeat(8);
@@ -158,4 +158,17 @@ test('Vietnamese tags from a Vietnamese host resolve to the Chinese tag vocabula
   assert.deepEqual(parseReply(vietIdol, '[Vui][Nghiêng đầu][Nhiệt tình]Chào bạn nha'), { face: 'happy', action: '歪头', text: 'Chào bạn nha', tone: '热情' });
   assert.equal(parseReply(vietIdol, 'Chào bạn [Vẫy tay] nha').text, 'Chào bạn nha');
   assert.deepEqual(parseReply(vietIdol, '[平静][无][客服]Bạn ơi, đi ngủ đi'), { face: 'neutral', action: null, text: 'Bạn ơi, đi ngủ đi', tone: '客服' });
+});
+
+test('the Vietnamese thought line is never shown or read: same-line and bare-mood prefixes are stripped', () => {
+  const vi = takeInner('Cảm nhận: mềm lòng | Cãi nhau mà vẫn nhớ người kia ghét nho khô, Vy muốn nghe cả tiếng ghé kéo sất lại.');
+  assert.equal(vi.text, 'Cãi nhau mà vẫn nhớ người kia ghét nho khô, Vy muốn nghe cả tiếng ghé kéo sất lại.');
+  assert.equal(vi.feel, 'mềm lòng');
+  assert.equal(parseReply(vietIdol, 'Sốt ruột | Cãi nhau mà vẫn nhớ người kia ghét nho khô, Vy muốn nghe cả tiếng ghé kéo sất lại.').text, 'Cãi nhau mà vẫn nhớ người kia ghét nho khô, Vy muốn nghe cả tiếng ghé kéo sất lại.');
+  // a real line that merely contains a pipe stays whole
+  assert.equal(parseReply(vietIdol, 'Phim hay | xem tiếp đi').text, 'Phim hay | xem tiếp đi');
+  // the Chinese thought line still works exactly as before
+  const zh = takeInner('想：开心｜今天赚了\nChào bạn nha');
+  assert.equal(zh.text, 'Chào bạn nha');
+  assert.equal(zh.feel, '开心');
 });

@@ -357,24 +357,39 @@ export function googleVoice({ dir, googleUrl = GOOGLE_TTS_URL, fetchImpl = fetch
     }
     return parts.length ? parts : [String(text)];
   }
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
   async function fetchChunk(part) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    try {
-      const r = await fetchImpl(`${googleUrl}?ie=UTF-8&tl=vi&client=tw-ob&q=${encodeURIComponent(part)}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36' }, signal: ctrl.signal });
-      if (!r.ok) return null;
-      const buf = Buffer.from(await r.arrayBuffer());
-      return buf.length > 100 ? buf : null;
-    } catch { return null; } finally { clearTimeout(timer); }
+    // Google throttles this unofficial endpoint in bursts (a 403 for a while,
+    // then it works again) — that is why the room sometimes reads and
+    // sometimes goes silent. Retry a failed chunk a few times with backoff
+    // instead of dropping the whole line on the first refusal.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const r = await fetchImpl(`${googleUrl}?ie=UTF-8&tl=vi&client=tw-ob&q=${encodeURIComponent(part)}`, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36' }, signal: ctrl.signal });
+        if (r.ok) {
+          const buf = Buffer.from(await r.arrayBuffer());
+          if (buf.length > 100) return buf;
+        }
+      } catch {} finally { clearTimeout(timer); }
+      if (attempt < 3) await sleep(600 * attempt);
+    }
+    return null;
   }
   async function fetchMp3(text) {
     if (!room(text)) { status?.('voice', false, 'daily cap reached'); return null; }
     const bufs = [];
+    let skipped = 0;
     for (const part of chunks(text)) {
       const b = await fetchChunk(part);
-      if (!b) return null;
+      if (!b) { skipped++; continue; }
       bufs.push(b);
     }
+    if (!bufs.length) return null;
+    // A chunk that still fails after retries is skipped, not fatal: hearing
+    // most of the line beats silence, and the subtitle shows the full text.
+    if (skipped) console.warn(`voice fallback: google tts skipped ${skipped} chunk(s)`);
     used += text.length;
     return Buffer.concat(bufs);
   }
@@ -404,6 +419,79 @@ export function googleVoice({ dir, googleUrl = GOOGLE_TTS_URL, fetchImpl = fetch
     return decode(mp3).catch(() => null);
   }
   return { say, pcm, provider: 'google', get used() { return used; }, dailyChars };
+}
+
+// VieNeu: the Vietnamese offline voice T Review uses ("Ngọc Huyền" and the
+// other voices in its list). The model runs in T Review's sidecar at
+// 127.0.0.1:8771 — this engine only CALLS it, it never installs the model:
+// POST /synthesize {text, voice, out_path} writes a wav to out_path on the
+// machine. If the sidecar is not running, say() returns null and the caller
+// falls back to Google TTS, so the room is never silent because of it.
+// Offline means no rate limit and no cloud to drop the connection — the
+// durable fix for the "sometimes reads, sometimes not" voice.
+export const VIENEU_URL = 'http://127.0.0.1:8771';
+export function vieneuVoice({ dir, base = VIENEU_URL, voiceName = 'Ngọc Huyền', fetchImpl = fetch, execImpl = null, timeoutMs = 60000, keepFiles = 300, status }) {
+  fs.mkdirSync(dir, { recursive: true });
+  let warming = false;
+  // Load the model in the background (first load can take minutes); lines use
+  // the Google fallback until it is ready. Fire-and-forget, never blocks a line.
+  async function warmup() {
+    if (warming) return;
+    warming = true;
+    try {
+      const h = await fetchImpl(`${base}/health`, { signal: AbortSignal.timeout(5000) }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
+      if (!h.loaded) await fetchImpl(`${base}/warmup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(10000) }).catch(() => null);
+    } catch {} finally { warming = false; }
+  }
+  function prune(ext) {
+    const files = fs.readdirSync(dir).filter(f => f.endsWith(ext)).map(f => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t);
+    for (const { f } of files.slice(keepFiles)) fs.rmSync(path.join(dir, f), { force: true });
+  }
+  // Duration from the wav header (byteRate at 28, data size at 40); falls
+  // back to assuming 24 kHz mono 16-bit when the header is unreadable.
+  function wavDurationMs(file, size) {
+    try {
+      const fd = fs.openSync(file, 'r');
+      const head = Buffer.alloc(44);
+      fs.readSync(fd, head, 0, 44, 0);
+      fs.closeSync(fd);
+      const byteRate = head.readUInt32LE(28);
+      const dataSize = head.readUInt32LE(40);
+      if (byteRate > 0 && dataSize > 0) return Math.round(dataSize / byteRate * 1000);
+    } catch {}
+    return Math.round((size - 44) / 48);
+  }
+  async function synth(text, id) {
+    const wav = path.resolve(dir, `${id}.wav`);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const r = await fetchImpl(`${base}/synthesize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, voice: voiceName, out_path: wav }), signal: ctrl.signal });
+      if (!r.ok) return null;
+      const st = fs.existsSync(wav) ? fs.statSync(wav) : null;
+      if (!st || st.size <= 44) return null;
+      return { wav, durationMs: wavDurationMs(wav, st.size) };
+    } catch { return null; } finally { clearTimeout(timer); }
+  }
+  async function say(text, face, id) {
+    const out = await synth(text, id);
+    if (!out) { status?.('voice', false, 'sidecar VieNeu chưa chạy — mở T Review để bật sidecar, hoặc đổi giọng trong Cài đặt'); console.warn('voice failed: vieneu sidecar unreachable'); return null; }
+    prune('.wav');
+    status?.('voice', true);
+    return { url: `/audio/${id}.wav`, durationMs: out.durationMs };
+  }
+  // wav to raw 24 kHz mono PCM for the Vidu component avatar, through ffmpeg.
+  const decode = execImpl || (buf => new Promise((resolve, reject) => {
+    const child = execFile('ffmpeg', ['-v', 'error', '-i', 'pipe:0', '-f', 's16le', '-ar', '24000', '-ac', '1', 'pipe:1'], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => err ? reject(err) : resolve(stdout));
+    child.stdin.on('error', () => {});
+    child.stdin.end(buf);
+  }));
+  async function pcm(text, id) {
+    const out = await synth(text, id || 'vieneu-pcm');
+    if (!out) return null;
+    return decode(fs.readFileSync(out.wav)).catch(() => null);
+  }
+  return { say, pcm, warmup, provider: 'vieneu', voiceName, get used() { return 0; }, dailyChars: 1000000 };
 }
 
 // A fetch response's body line by line as it arrives; a response without a readable body is read whole.

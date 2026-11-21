@@ -104,7 +104,7 @@ const EN = {
   '保存': 'Save', '检查': 'Test', '删 key': 'Delete key',
   '正在保存…': 'Saving…', '正在检查…': 'Testing…', '已保存': 'Saved',
   'Key 跑起来了': 'Key works', '先保存 key': 'Save a key first',
-  '语音和画面': 'Voice and face', '配音': 'Voice', 'Edge（免费，不用 key）': 'Edge (free, no key)', 'Doubao（克隆音）': 'Doubao (cloned voice)', 'fal MiniMax': 'fal MiniMax', 'Edge 声音': 'Edge voice', '配音 ID（Doubao）': 'Voice ID (Doubao)',
+  '语音和画面': 'Voice and face', '配音': 'Voice', 'Edge（免费，不用 key）': 'Edge (free, no key)', 'Doubao（克隆音）': 'Doubao (cloned voice)', 'fal MiniMax': 'fal MiniMax', 'Edge 声音': 'Edge voice', 'VieNeu（离线，需 T Review 声卡）': 'VieNeu (offline, needs the T Review sidecar)', 'VieNeu 声音': 'VieNeu voice', '配音 ID（Doubao）': 'Voice ID (Doubao)',
   '语音和画面在重启服务器后生效': 'Voice and face apply after the server restarts',
   '关闭': 'Close', '没有权限': 'No permission',
   // show acts (v5): shop, quiz, songs, quick commands, live push
@@ -223,7 +223,7 @@ const VI = {
   '保存': 'Lưu', '检查': 'Kiểm tra', '删 key': 'Xóa key',
   '正在保存…': 'Đang lưu…', '正在检查…': 'Đang kiểm tra…', '已保存': 'Đã lưu',
   'Key 跑起来了': 'Key chạy được', '先保存 key': 'Lưu key trước đã',
-  '语音和画面': 'Giọng nói và khuôn mặt', '配音': 'Giọng nói', 'Edge（免费，不用 key）': 'Edge (miễn phí, không cần key)', 'Doubao（克隆音）': 'Doubao (giọng clone)', 'fal MiniMax': 'fal MiniMax', 'Edge 声音': 'Giọng Edge', '配音 ID（Doubao）': 'ID giọng (Doubao)',
+  '语音和画面': 'Giọng nói và khuôn mặt', '配音': 'Giọng nói', 'Edge（免费，不用 key）': 'Edge (miễn phí, không cần key)', 'Doubao（克隆音）': 'Doubao (giọng clone)', 'fal MiniMax': 'fal MiniMax', 'Edge 声音': 'Giọng Edge', 'VieNeu（离线，需 T Review 声卡）': 'VieNeu (offline, cần sidecar T Review)', 'VieNeu 声音': 'Giọng VieNeu', '配音 ID（Doubao）': 'ID giọng (Doubao)',
   '语音和画面在重启服务器后生效': 'Giọng nói và khuôn mặt áp dụng khi khởi động lại server',
   '关闭': 'Đóng', '没有权限': 'Không có quyền',
   // show acts (v5): shop, quiz, songs, quick commands, live push

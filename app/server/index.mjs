@@ -30,7 +30,7 @@ import { createTown, townAllowed } from './town.mjs';
 import { createRelay } from './relay.mjs';
 import { createVolcRoom } from './rtc.mjs';
 import { createSchedule, clockIn, showCue } from './schedule.mjs';
-import { falVoice, doubaoVoice, edgeVoice, googleVoice, edgeVoiceId, plainText, saidPart, VOICE, doubaoResource } from './voice.mjs';
+import { falVoice, doubaoVoice, edgeVoice, googleVoice, vieneuVoice, edgeVoiceId, plainText, saidPart, VOICE, doubaoResource } from './voice.mjs';
 import { createAuth, AuthError, isGuest } from './auth.mjs';
 import { liveRoom, watchGate } from './live.mjs';
 import { createMemory } from './memory.mjs';
@@ -142,24 +142,28 @@ export async function start(env = process.env) {
   if (voiceEngine === 'fal' && !falKey) voiceEngine = 'edge';
   const useDoubao = voiceEngine === 'doubao';
   const useEdge = voiceEngine === 'edge';
+  const useVieneu = voiceEngine === 'vieneu';
   const voiceDir = path.join(dataDir, 'audio'), dailyChars = Number(env.TTS_DAILY_CHARS || 60000);
   const stageVoice = env.VOICE_OFF === '1' ? null
     : useDoubao ? doubaoVoice({ key: volcKey, dir: voiceDir, dailyChars, voiceId: dv.voiceId, context: dv.context, speed: dv.speed || 0, tones: dv.tones || {}, status })
+    : useVieneu ? vieneuVoice({ dir: voiceDir, base: env.VIENEU_URL || undefined, voiceName: vk.vieneuVoice || env.VIENEU_VOICE || 'Ngọc Huyền', status })
     : useEdge ? edgeVoice({ dir: voiceDir, voiceId: edgeVoiceId(vk.edgeVoice || env.EDGE_VOICE || ''), wsUrl: env.EDGE_TTS_URL || undefined, status })
     : falVoice({ key: falKey, dir: voiceDir, dailyChars, voiceId: idol.fallbackVoice.voiceId, speed: idol.fallbackVoice.speed, status });
   // No voice engine at all (old builds had none without a key): the room must say off,
   // not ok — 'ok' with no engine is what hid the old-server-still-running case in v7.8.
   routes.voice.on = !!stageVoice;
-  // Edge's cloud drops the connection on this network (close 1006); when it
-  // fails, Google Translate TTS (free, no key) speaks the line instead so the
-  // room is never silent. The fallback only runs after Edge has failed, and
-  // the server log shows 'voice fallback: google tts' when it speaks.
+  // The primary voice fails sometimes — Edge's cloud drops the connection
+  // (close 1006), Google throttles in bursts, the VieNeu sidecar may not be
+  // running — so the line always falls through to Google Translate TTS (free,
+  // no key) instead of going silent. The fallback only runs after the primary
+  // has failed, and the server log shows 'voice fallback: google tts' when it speaks.
   let voice = stageVoice;
-  if (useEdge && stageVoice) {
+  if ((useEdge || useVieneu) && stageVoice) {
     const google = googleVoice({ dir: voiceDir, dailyChars, googleUrl: env.GOOGLE_TTS_URL || undefined, status });
-    const edgeSay = stageVoice.say.bind(stageVoice);
-    const edgePcm = stageVoice.pcm.bind(stageVoice);
-    voice = { ...stageVoice, say: async (...a) => (await edgeSay(...a)) || (await google.say(...a)), pcm: async (...a) => (await edgePcm(...a).catch(() => null)) || (await google.pcm(...a).catch(() => null)) };
+    const primarySay = stageVoice.say.bind(stageVoice);
+    const primaryPcm = stageVoice.pcm.bind(stageVoice);
+    voice = { ...stageVoice, say: async (...a) => (await primarySay(...a)) || (await google.say(...a)), pcm: async (...a) => (await primaryPcm(...a).catch(() => null)) || (await google.pcm(...a).catch(() => null)) };
+    if (useVieneu) stageVoice.warmup?.();
   }
   // With a DeepSeek key the mouth talks to DeepSeek directly (thinking off, MOUTH_DS model) and reads a page of facts
   // (brain.mjs factFor, idol.mouth.direct); the chosen provider backs it up. MOUTH_DIRECT=0 uses the chosen provider only.
@@ -742,7 +746,7 @@ export async function start(env = process.env) {
         radio: radio ? { wanted: radio.wanted(), on: radio.on, live: radio.live, answered: radio.answered, queue: radio.queue } : null,
         x: xClient ? { post: xClient.configured.user, read: xClient.configured.read, replies: !!xr } : null,
         heart: !!heart, onAir: schedule.info(),
-        voice: voice ? { model: voice.provider === 'doubao' ? doubaoResource(voice.voiceId) : voice.provider === 'edge' ? `edge-tts/${voice.voiceId}` : VOICE.model, charsToday: voice.used, capChars: voice.dailyChars, ...(voice.provider === 'doubao' ? { rmbToday: +voice.rmb.toFixed(3) } : voice.provider === 'edge' ? {} : { usdToday: +voice.usd.toFixed(3) }) } : null,
+        voice: voice ? { model: voice.provider === 'doubao' ? doubaoResource(voice.voiceId) : voice.provider === 'edge' ? `edge-tts/${voice.voiceId}` : voice.provider === 'vieneu' ? `vieneu/${voice.voiceName}` : VOICE.model, charsToday: voice.used, capChars: voice.dailyChars, ...(voice.provider === 'doubao' ? { rmbToday: +voice.rmb.toFixed(3) } : (voice.provider === 'edge' || voice.provider === 'vieneu') ? {} : { usdToday: +voice.usd.toFixed(3) }) } : null,
         modelSpend: { calls: brain.spend.calls, fails: brain.spend.fails, usd: +brain.spend.usd.toFixed(4) },
       }));
       // The settings panel (the operator, not the room): keys are only ever sent back

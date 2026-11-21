@@ -10,7 +10,7 @@ import { EDGE_VOICES } from './voice.mjs';
 
 // Voice engines: 'edge' is Microsoft Edge TTS — free, no key (the voice T Review dubs
 // with); 'doubao' is the cloned voice (Volc key + voice id); 'fal' is fal MiniMax.
-export const VOICE_ENGINES = ['edge', 'doubao', 'fal'];
+export const VOICE_ENGINES = ['edge', 'doubao', 'fal', 'vieneu'];
 
 // kind: 'chat' = OpenAI-compatible /chat/completions, 'anthropic' = Messages API,
 // 'responses' = /v1/responses (Xingchi). base/model are the defaults; the panel can
@@ -80,11 +80,12 @@ export function createKeyStore({ file, env = process.env, idolModel = null }) {
     viduKey: str(cur.voice, 'viduKey') || env.VIDU_KEY || null,
     engine: str(cur.voice, 'engine') || env.VOICE_PROVIDER || null,
     edgeVoice: str(cur.voice, 'edgeVoice') || env.EDGE_VOICE || null,
+    vieneuVoice: str(cur.voice, 'vieneuVoice') || env.VIENEU_VOICE || null,
   });
   const status = () => ({
     provider: str(cur, 'provider') || 'openrouter',
     providers: PROVIDERS.map(p => ({ id: p.id, name: p.name, kind: p.kind, configured: !!keyFor(p.id), model: modelFor(p.id), defaultModel: p.model, base: baseFor(p.id), defaultBase: p.base })),
-    voice: { volcConfigured: !!(str(cur.voice, 'volcKey') || env.VOLC_API_KEY), voiceId: str(cur.voice, 'voiceId') || env.DOUBAO_VOICE_ID || '', viduConfigured: !!(str(cur.voice, 'viduKey') || env.VIDU_KEY), engine: str(cur.voice, 'engine') || env.VOICE_PROVIDER || '', edgeVoice: str(cur.voice, 'edgeVoice') || env.EDGE_VOICE || '', edgeVoices: EDGE_VOICES },
+    voice: { volcConfigured: !!(str(cur.voice, 'volcKey') || env.VOLC_API_KEY), voiceId: str(cur.voice, 'voiceId') || env.DOUBAO_VOICE_ID || '', viduConfigured: !!(str(cur.voice, 'viduKey') || env.VIDU_KEY), engine: str(cur.voice, 'engine') || env.VOICE_PROVIDER || '', edgeVoice: str(cur.voice, 'edgeVoice') || env.EDGE_VOICE || '', edgeVoices: EDGE_VOICES, vieneuVoice: str(cur.voice, 'vieneuVoice') || env.VIENEU_VOICE || '' },
     liveMode: liveMode(),
   });
   // Which show act runs on air right now ('all' when nothing was ever picked).
@@ -128,6 +129,10 @@ export function createKeyStore({ file, env = process.env, idolModel = null }) {
       if (o.edgeVoice !== undefined) {
         if (!isStr(o.edgeVoice) || (o.edgeVoice !== '' && !EDGE_VOICES.some(v => v.id === o.edgeVoice))) throw new Error('bad settings');
         if (o.edgeVoice === '') delete next.voice.edgeVoice; else next.voice.edgeVoice = o.edgeVoice;
+      }
+      if (o.vieneuVoice !== undefined) {
+        if (!isStr(o.vieneuVoice) || o.vieneuVoice.length > 40) throw new Error('bad settings');
+        if (o.vieneuVoice === '') delete next.voice.vieneuVoice; else next.voice.vieneuVoice = o.vieneuVoice;
       }
     }
     // path.dirname, not a /-only regex: on Windows the path has \ separators and the

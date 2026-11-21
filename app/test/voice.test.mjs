@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { falVoice, doubaoVoice, edgeVoice, googleVoice, edgeVoiceId, spokenLang, EDGE_TTS_URL } from '../server/voice.mjs';
+import { falVoice, doubaoVoice, edgeVoice, googleVoice, vieneuVoice, edgeVoiceId, spokenLang, EDGE_TTS_URL } from '../server/voice.mjs';
 import { WebSocketServer } from 'ws';
 
 test('a failed voice request is retried once with the picked voice and full quality', async () => {
@@ -370,6 +370,132 @@ test('Edge fails, Google fallback speaks: a chat reply still comes back with aud
     stub.close();
     google.close();
     dead.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Google TTS fallback: a throttled chunk is retried, and a dead chunk is skipped instead of silencing the line', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-google-retry-'));
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls++;
+    if (calls <= 2) return { ok: false, status: 403, arrayBuffer: async () => new ArrayBuffer(0) };
+    return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array(800).buffer };
+  };
+  const v = googleVoice({ dir, fetchImpl });
+  const out = await v.say('Xin chào bạn.', 'smile', 'r1');
+  assert.equal(out.url, '/audio/r1.mp3');
+  assert.equal(calls, 3);
+  // two chunks, the second one never answers: the first still speaks
+  const bad = googleVoice({ dir, fetchImpl: async url => url.includes(encodeURIComponent('Đoạn hai.')) ? { ok: false, status: 403, arrayBuffer: async () => new ArrayBuffer(0) } : { ok: true, status: 200, arrayBuffer: async () => new Uint8Array(800).buffer } });
+  const out2 = await bad.say('Đoạn một. Đoạn hai.', 'smile', 'r2');
+  assert.equal(out2.url, '/audio/r2.mp3');
+  assert.equal(fs.readFileSync(path.join(dir, 'r2.mp3')).length, 800);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// A minimal wav: 24 kHz mono 16-bit, byteRate 48000, dataSize 4800 -> 100 ms.
+function miniWav(dataSize = 4800) {
+  const head = Buffer.alloc(44);
+  head.write('RIFF', 0); head.writeUInt32LE(36 + dataSize, 4); head.write('WAVEfmt ', 8);
+  head.writeUInt32LE(16, 16); head.writeUInt16LE(1, 20); head.writeUInt16LE(1, 22); head.writeUInt32LE(24000, 24);
+  head.writeUInt32LE(48000, 28); head.writeUInt16LE(2, 32); head.writeUInt16LE(16, 34); head.write('data', 36); head.writeUInt32LE(dataSize, 40);
+  return Buffer.concat([head, Buffer.alloc(dataSize)]);
+}
+function fakeSidecar({ loaded = true } = {}) {
+  const srv = http.createServer((req, res) => {
+    if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, loaded })); return; }
+    if (req.url === '/warmup' && req.method === 'POST') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{}'); return; }
+    if (req.url === '/synthesize' && req.method === 'POST') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        const { out_path } = JSON.parse(body);
+        fs.writeFileSync(out_path, miniWav());
+        res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true }));
+      });
+      return;
+    }
+    res.writeHead(404); res.end();
+  });
+  return new Promise(r => srv.listen(0, '127.0.0.1', () => r({ srv, base: `http://127.0.0.1:${srv.address().port}`, close: () => new Promise(res => srv.close(res)) })));
+}
+
+test('VieNeu sidecar: a line comes back as a wav with the right duration, a dead sidecar returns null', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-vieneu-'));
+  const side = await fakeSidecar();
+  try {
+    const v = vieneuVoice({ dir, base: side.base, voiceName: 'Ngọc Huyền' });
+    const out = await v.say('Xin chào bạn, tôi là Vy.', 'smile', 'v1');
+    assert.equal(out.url, '/audio/v1.wav');
+    assert.equal(out.durationMs, 100);
+    assert.equal(fs.readFileSync(path.join(dir, 'v1.wav')).length, 44 + 4800);
+    const dead = vieneuVoice({ dir, base: 'http://127.0.0.1:1' });
+    assert.equal(await dead.say('hi', 'smile', 'v2'), null);
+  } finally { await side.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('VieNeu end to end: a chat reply comes back with the sidecar wav; a dead sidecar falls back to Google', async () => {
+  const { start } = await import('../server/index.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-vieneu-e2e-'));
+  const side = await fakeSidecar();
+  const google = http.createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'audio/mpeg' }); res.end(Buffer.alloc(800)); });
+  await new Promise(r => google.listen(0, '127.0.0.1', r));
+  const googleUrl = `http://127.0.0.1:${google.address().port}/translate_tts`;
+  const stub = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'A, hi đấy mà!' } }] })); });
+  });
+  await new Promise(r => stub.listen(0, '127.0.0.1', r));
+  const stubPort = stub.address().port;
+  const chatOnce = async app => {
+    const base = `http://127.0.0.1:${app.server.address().port}`;
+    const stream = await fetch(`${base}/api/stream`);
+    let r = await fetch(`${base}/api/guest`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'kakap' }) });
+    const { token } = await r.json();
+    r = await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, text: 'hi' }) });
+    assert.equal(r.status, 200);
+    let audio = null, seen = '';
+    for (let i = 0; i < 60 && !audio; i++) {
+      await new Promise(r => setTimeout(r, 250));
+      const st = await (await fetch(`${base}/api/state`)).json();
+      seen = st.line?.text || seen;
+      if (st.line?.audio && (st.line.text || '').includes('hi đấy')) audio = st.line.audio;
+    }
+    await stream.body.cancel();
+    return { base, audio, seen };
+  };
+  const settings = async (base, voice) => {
+    const r = await fetch(`${base}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'custom', keys: { custom: 'test-key' }, bases: { custom: `http://127.0.0.1:${stubPort}` }, models: { custom: 'test-model' }, voice }) });
+    assert.equal(r.status, 200);
+  };
+  try {
+    // sidecar up: the reply carries the wav
+    let app = await start({ IDOL: 'viet', MODE: 'test', DATA_DIR: dir, AVATAR: 'mock', VOICE_PROVIDER: 'vieneu', VIENEU_URL: side.base, GOOGLE_TTS_URL: googleUrl });
+    await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+    try {
+      await settings(`http://127.0.0.1:${app.server.address().port}`, { engine: 'vieneu', vieneuVoice: 'Ngọc Huyền' });
+      const { base, audio, seen } = await chatOnce(app);
+      assert.ok(audio, `no spoken chat reply (last line: ${seen})`);
+      assert.match(audio, /\.wav$/);
+      const r = await fetch(`${base}${audio}`);
+      assert.equal(r.status, 200);
+      assert.equal((await r.arrayBuffer()).byteLength, 44 + 4800);
+    } finally { await app.shutdown(); }
+    // sidecar down: the same reply falls back to Google audio
+    const app2 = await start({ IDOL: 'viet', MODE: 'test', DATA_DIR: dir, AVATAR: 'mock', VOICE_PROVIDER: 'vieneu', VIENEU_URL: 'http://127.0.0.1:1', GOOGLE_TTS_URL: googleUrl });
+    await new Promise(r => app2.server.listen(0, '127.0.0.1', r));
+    try {
+      await settings(`http://127.0.0.1:${app2.server.address().port}`, { engine: 'vieneu', vieneuVoice: 'Ngọc Huyền' });
+      const { base, audio, seen } = await chatOnce(app2);
+      assert.ok(audio, `no spoken chat reply (last line: ${seen})`);
+      assert.match(audio, /\.mp3$/);
+    } finally { await app2.shutdown(); }
+  } finally {
+    stub.close();
+    google.close();
+    await side.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -1,5 +1,29 @@
-HUONG DAN - OPEN LIVESTREAM v7.9.3
+HUONG DAN - OPEN LIVESTREAM v7.9.4
 ==============================
+
+v7.9.4 GIONG NGOC HUYEN (OFFLINE) + SUA "LUC DOC LUC KHONG" + BO TIEN TO "CAM NHAN: ... |":
+1. LUC DOC LUC KHONG LA SAO: giong Google du phong bi Google chan
+   theo dot (403) khi goi lien tuc — ban cu gap 403 la ca cau im
+   luon, khong thu lai. Gio moi doan that bai duoc thu lai toi 3
+   lan (cho 0,6s roi 1,2s); doan nao chet han thi bo qua doan do
+   chu khong im ca cau nua. Edge thi van chet 1006 nhu cu.
+2. GIONG NGOC HUYEN (VieNeu, offline — giong trong T Review):
+   vao Cai dat > Giong noi, chon "VieNeu (offline, can sidecar
+   T Review)", ten giong de mac dinh "Ngọc Huyền" roi bam Luu,
+   khoi dong lai server. DIEU KIEN: sidecar VieNeu phai dang chay
+   tren may ban (cong 127.0.0.1:8771) — mo T Review 1 lan (giong
+   VieNeu da tai ve trong T Review) de no bat sidecar, roi mo
+   lai live. Server tu goi lenh warmup o nen de nap model; nhung
+   cau dau tien van dung giong Google cho toi khi model nap xong.
+   Neu sidecar chua chay, phong tu roi ve giong Google chu khong
+   im. Giong offline khong bi chan, khong phu thuoc mang nen doc
+   deu hon han. Ten giong khac (Truc Ly, Ngoc Linh...) thi go
+   dung ten trong o "Giong VieNeu".
+3. BO TIEN TO "CAM NHAN: ... |": tu nay cau tra loi dang "Cam
+   nhan: mem long | Cai nhau..." se chi hien va chi doc phan
+   "Cai nhau..." — phan cam nhan la suy nghi trong dau cua Vy,
+   khong hien len phu de, khong doc thanh tieng. Ca dang khong
+   dau hai cham ("Sot ruot | ...") cung bo luon.
 
 v7.9.3 GIONG DU PHONG PHIA SERVER (CO TIENG NGAY CA KHI EDGE CHET HAN):
 Ban 7.9.2 van bao "voice failed: edge tts closed early (code 1006: )"

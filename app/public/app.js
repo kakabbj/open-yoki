@@ -436,6 +436,7 @@ async function loadSettings() {
   $('setVoiceEngine').value = vv.engine || 'edge';
   $('setEdgeVoice').innerHTML = (vv.edgeVoices || []).map(v => `<option value="${esc(v.id)}">${esc(v.name)}</option>`).join('');
   $('setEdgeVoice').value = vv.edgeVoice || $('setEdgeVoice').options[0]?.value || '';
+  $('setVieneuVoice').value = vv.vieneuVoice || 'Ngọc Huyền';
   fillVoiceEngine();
   fillProvider();
 }
@@ -457,6 +458,7 @@ $('setProvider').onchange = () => fillProvider();
 function fillVoiceEngine() {
   const eng = $('setVoiceEngine').value;
   $('setEdgeVoiceRow').hidden = eng !== 'edge';
+  $('setVieneuVoiceRow').hidden = eng !== 'vieneu';
   $('setVolcKeyRow').hidden = eng !== 'doubao';
   $('setVoiceIdRow').hidden = eng !== 'doubao';
 }
@@ -468,6 +470,7 @@ $('setSave').onclick = async () => {
   if ($('setKey').value) body.keys[id] = $('setKey').value;
   body.voice.engine = $('setVoiceEngine').value;
   if ($('setEdgeVoice').value) body.voice.edgeVoice = $('setEdgeVoice').value;
+  if ($('setVieneuVoice').value.trim()) body.voice.vieneuVoice = $('setVieneuVoice').value.trim();
   if ($('setVolcKey').value) body.voice.volcKey = $('setVolcKey').value;
   if ($('setVoiceId').value.trim()) body.voice.voiceId = $('setVoiceId').value.trim();
   if ($('setViduKey').value) body.voice.viduKey = $('setViduKey').value;

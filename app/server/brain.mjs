@@ -80,11 +80,26 @@ export function takeNote(raw) {
 // speaking, "想：<mood>｜<what she makes of it / what she will do>". It is never read out; the brain keeps her mood
 // from it so the mood carries from line to line, and the show's reflection reads it.
 export function takeInner(raw) {
-  const m = String(raw || '').match(/^\s*想[:：]\s*([^\n\[【]*)\s*/);
-  // the model sometimes writes a second 想 line in the middle of the reply (it would be read out loud); drop those too
-  const rest = t => t.replace(/\s*想[:：][^｜|\n\[【]{0,12}[｜|][^\s\[【]{0,20}\s*/g, ' ').replace(/ {2,}/g, ' ');
+  // The thought line is written in Vietnamese too — "Cảm nhận: mềm lòng | <line>",
+  // "Nghĩ: ... | <line>" — same shape as 想：<mood>｜<why>, and likewise never
+  // read out. One difference: in Vietnamese the thought and the speech often
+  // share ONE line ("Cảm nhận: mềm lòng | Cãi nhau mà..."), so when the part
+  // after the pipe is long it is the speech, not the why.
+  const LABEL = '(?:想|Nghĩ|Cảm nhận|Cảm xúc|Tâm trạng)';
+  const m = String(raw || '').match(new RegExp(`^\\s*${LABEL}[:：]\\s*([^\\n\\[【]*)\\s*`));
+  // the model sometimes writes a second thought line in the middle of the reply (it would be read out loud); drop those too
+  const rest = t => t.replace(new RegExp(`\\s*${LABEL}[:：][^｜|\\n\\[【]{0,12}[｜|][^\\s\\[【]{0,20}\\s*`, 'g'), ' ').replace(/ {2,}/g, ' ');
   if (!m) return { text: rest(String(raw || '')), inner: null, feel: null };
   const inner = m[1].trim(), [feel, ...why] = inner.split(/[｜|]/);
+  // Vietnamese only: the thought and the speech share one line, and the part
+  // after the pipe is long because it IS the speech ("Cảm nhận: mềm lòng |
+  // Cãi nhau mà..."). In the Chinese form the pipe separates feel/why and
+  // the why stays short, so a long tail after a Vietnamese label is speech.
+  const isVi = /^(?:Nghĩ|Cảm nhận|Cảm xúc|Tâm trạng)/.test(m[0].trim());
+  if (isVi && why.length && why.join('').trim().length > 20) {
+    const tail = String(raw).slice(m[0].length);
+    return { text: rest(why.join('|').trim() + (tail ? '\n' + tail : '')), inner: feel.trim() || null, feel: feel.trim().slice(0, 8) || null, why: null };
+  }
   return { text: rest(String(raw).slice(m[0].length)), inner: inner || null, feel: why.length ? feel.trim().slice(0, 8) || null : null, why: why.join('，').trim() || null };
 }
 
@@ -291,6 +306,10 @@ export function fitLength(text, max = 300) {
 // voice tones adds a third tag, how the line is read: "[开心][无][吐槽]台词".
 export function parseReply(idol, raw) {
   let text = String(raw || '').trim().replace(/^["“]|["”]$/g, '');
+  // The model sometimes opens with a bare mood and a pipe — "Sốt ruột | <speech>"
+  // — no colon, so takeInner's thought line does not catch it. Drop the mood,
+  // keep the speech. Vietnamese only, and only when the rest is a real line.
+  if (idol.lang === 'vi') text = text.replace(/^\s*[^|\n\[【:：]{1,12}\|\s*(?=[\s\S]{20,})/, '');
   let face = 'neutral', action = null, tone = null;
   const tones = tonesOf(idol);
   // Tags may be Vietnamese ([Nghiêng đầu][Nhiệt tình]) — the host answers in Vietnamese,
