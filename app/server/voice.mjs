@@ -269,7 +269,12 @@ export function edgeVoice({ dir, voiceId = EDGE_VOICES[0].id, rate = '+0%', pitc
         else if (/Path:\s*turn\.end/.test(head)) finish();
       });
       ws.on('error', fail);
-      ws.on('close', () => { if (!done) fail(new Error('edge tts closed early')); });
+      // The close code/reason is the diagnosis: a policy close (1008) means the
+      // service refused the request, a handshake refusal arrives as
+      // 'unexpected-response' with the HTTP status. Without them every failure
+      // looked the same ("closed early") and could not be fixed from outside.
+      ws.on('unexpected-response', (req, res) => { if (!done) fail(new Error(`edge tts ${res.statusCode}: ${(res.statusMessage || '').slice(0, 80)}`)); });
+      ws.on('close', (code, reason) => { if (!done) fail(new Error(`edge tts closed early (code ${code}${reason ? ': ' + String(reason).slice(0, 80) : ''})`)); });
     });
   }
   // mp3 (48 kbps) to raw 24 kHz mono PCM for the Vidu component avatar, through ffmpeg.

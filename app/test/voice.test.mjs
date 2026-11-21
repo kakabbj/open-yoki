@@ -250,3 +250,18 @@ test('Edge voice end to end: a chat reply comes back with audio the page can pla
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('Edge TTS: a server close carries its code and reason into the voice error', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-edge-close-'));
+  let why = null;
+  class StubWS {
+    constructor(url, opts) { this.h = {}; setImmediate(() => this.h.open?.forEach(f => f())); }
+    on(ev, fn) { (this.h[ev] ??= []).push(fn); return this; }
+    send(s) { if (s.includes('Path:ssml')) setImmediate(() => this.h.close?.forEach(f => f(1008, Buffer.from('token expired')))); }
+    close() {}
+  }
+  const v = edgeVoice({ dir, wsUrl: EDGE_TTS_URL, wsImpl: StubWS, tokenImpl: () => 'T', status: (r, ok, err) => { if (!ok) why = err; } });
+  assert.equal(await v.say('Xin chào', 'smile', 'e9'), null);
+  assert.match(why, /edge tts closed early \(code 1008: token expired\)/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

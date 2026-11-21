@@ -1,5 +1,15 @@
-HUONG DAN - OPEN LIVESTREAM v7.9
+HUONG DAN - OPEN LIVESTREAM v7.9.1
 ==============================
+
+v7.9.1 PHONG GIO HIEN LUON LY DO LOI GIONG:
+ban 7.9 phong bao "Giong noi loi" nhung khong noi loi gi. Ban nay
+phong hien luon ly do ngay duoi man hinh live, vd
+"Giong noi Loi — edge tts closed early (code 1008: ...)".
+Ban cap nhat nhu cu (tat server cu, chay Chay-Live.bat 1 lan),
+chat "hi" 1 cau roi chup man hinh phong gui minh — nhin dong
+"Giong noi Loi — ..." la biet ngay Microsoft tu choi vi sao
+(token het han, bi chan, hay mang), de sua dung cho do.
+(Khong co thay doi nao khac so voi 7.9.)
 
 v7.9 TIM RA LY DO THAT SU "KHONG CO LOI NOI NAO":
 Ban bao khong co tieng du phong bao "Giong noi OK" — vi dong do

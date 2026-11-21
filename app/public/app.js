@@ -188,7 +188,9 @@ function render(snap, prev) {
   const moves = Object.keys(snap.idol.actions || {});
   const html = moves.map(k => `<button type="button" data-a="${esc(k)}">${esc(t(k))}</button>`).join('');
   if ($('moves').innerHTML !== html) $('moves').innerHTML = html;
-  $('routes').innerHTML = Object.entries(snap.routes || {}).filter(([k]) => ROUTE_NAMES[k]).map(([k, v]) => `<span class="route ${v}" title="${esc(snap.why?.[k] || '')}">${t(ROUTE_NAMES[k])} ${t(ROUTE_STATE[v] || v)}</span>`).join('');
+  // A failing route shows its reason inline, not only as a hover tooltip, so a
+  // screenshot of the room already says why the voice (or brain) is down.
+  $('routes').innerHTML = Object.entries(snap.routes || {}).filter(([k]) => ROUTE_NAMES[k]).map(([k, v]) => `<span class="route ${v}" title="${esc(snap.why?.[k] || '')}">${t(ROUTE_NAMES[k])} ${t(ROUTE_STATE[v] || v)}${v === 'down' && snap.why?.[k] ? ` — ${esc(snap.why[k])}` : ''}</span>`).join('');
   $('appVersion').textContent = snap.version ? `v${snap.version}` : '';
 }
 // The Binance board she reads from, and her market notebook: tonight's guess, the last answer, the record. No money
