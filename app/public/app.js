@@ -134,7 +134,8 @@ function paintLine(line, fresh) {
   let i = 0;
   el.textContent = '';
   typing = setInterval(() => { el.textContent = text.slice(0, ++i); if (i >= text.length) clearInterval(typing); }, step);
-  if (sound && line.audio && !liveShown()) { player.src = line.audio; player.play().catch(() => {}); }
+  if (sound && line.audio && !liveShown()) { stopFallback(); player.src = line.audio; player.play().catch(() => {}); }
+  else if (sound && !line.audio && !liveShown()) speakFallback(text);
   if (line.bgm?.url) {
     if (!line.action) showMove('♪ ' + line.bgm.title);
     if (sound) { songPlayer.src = line.bgm.url; songPlayer.volume = 0.32; songPlayer.play().catch(() => {}); }
@@ -338,16 +339,46 @@ $('goBtn').onclick = () => {
 
 function setSound(on) {
   sound = on;
-  if (!on) songPlayer.pause();
+  if (!on) { songPlayer.pause(); stopFallback(); }
   $('soundBtn').dataset.i18n = on ? '关声音' : '开声音';
   $('soundBtn').textContent = t($('soundBtn').dataset.i18n);
   $('soundBtn').setAttribute('aria-pressed', String(on));
   if (volc?.up) return volcAudio(on);
   if (liveShown()) { video().muted = !on; if (on) video().play().catch(() => {}); return; }
   if (!on) player.pause();
-  else if (lastLine?.audio) { player.src = lastLine.audio; player.play().catch(() => {}); }
+  else if (lastLine?.audio) { stopFallback(); player.src = lastLine.audio; player.play().catch(() => {}); }
+  else if (lastLine) speakFallback(lastLine.text);
 }
 $('soundBtn').onclick = () => setSound(!sound);
+
+// Fallback voice (v7.9.2): when the server voice fails, the line carries no
+// audio. The browser's own Vietnamese voice then reads the line instead of
+// leaving her silent. Only used when a vi voice is installed on the machine;
+// Edge audio always wins when it exists. A missing vi voice means Windows has
+// no Vietnamese speech voice installed (Settings > Speech), and the room
+// stays silent for that line.
+let viVoice = undefined; // undefined = not looked up yet, null = none installed
+function pickViVoice() {
+  if (typeof speechSynthesis === 'undefined') return null;
+  if (viVoice === undefined) {
+    const found = speechSynthesis.getVoices().find(v => (v.lang || '').toLowerCase().startsWith('vi'));
+    if (found) viVoice = found;
+    else return null; // voices may still be loading; do not cache the miss
+  }
+  return viVoice;
+}
+function speakFallback(text) {
+  const v = pickViVoice();
+  if (!v || !text) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.voice = v; u.lang = v.lang; u.rate = 1;
+    speechSynthesis.speak(u);
+  } catch {}
+}
+function stopFallback() { try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch {} }
+if (typeof speechSynthesis !== 'undefined' && speechSynthesis) speechSynthesis.onvoiceschanged = () => { viVoice = undefined; };
 
 // Browsers block sound before the first click or keypress, so a line that arrived
 // before that stays silent even with sound on: the first interaction replays the
@@ -356,6 +387,7 @@ let audioUnlocked = false;
 const unlockAudio = () => {
   if (audioUnlocked) return; audioUnlocked = true;
   if (sound && lastLine?.audio && !liveShown() && player.paused && player.currentTime === 0) { player.src = lastLine.audio; player.play().catch(() => {}); }
+  else if (sound && lastLine && !lastLine.audio && !liveShown()) speakFallback(lastLine.text);
 };
 addEventListener('pointerdown', unlockAudio);
 addEventListener('keydown', unlockAudio);

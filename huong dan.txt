@@ -1,5 +1,29 @@
-HUONG DAN - OPEN LIVESTREAM v7.9.1
+HUONG DAN - OPEN LIVESTREAM v7.9.2
 ==============================
+
+v7.9.2 CO TIENG NGAY CA KHI EDGE BI CHAN (giong du phong) + SUA 2 DIEM NOI EDGE:
+Ban 7.9.1 bao loi "closed early (code 1006: )" — nghia la Microsoft
+nhan duoc yeu cau roi tu dong ket noi ma khong bao ly do (1006 = dong
+bat thuong, khong co ban tin dong). Dong ho may ban dung gio (7:26 PM
+dung voi gio nhan) nen khong phai loi token theo gio. Con 2 kha nang:
+may ban phai di qua proxy moi ra duoc Microsoft (ban Python cua
+T Review tu di qua proxy, ban Node thi khong) hoac dich vu Microsoft
+khong thich cach bat tay co nen cua trinh khach Node.
+  1. GIONG DU PHONG (co tieng ngay): khi Edge that bai, phong tu doc
+     cau tra loi bang giong tieng Viet co san trong Windows
+     (speechSynthesis) thay vi im lang. Giong nay la giong may, khong
+     hay bang Hoai My, nhung nghe duoc ngay. Edge van duoc uu tien —
+     chi khi Edge that bai moi dung giong du phong. Neu phong van im
+     lang nghia la Windows chua cai giong tieng Viet: vao Settings >
+     Speech (hoac Time & Language > Speech) cai them Vietnamese.
+  2. NOI EDGE QUA PROXY (neu may ban co dat bien HTTPS_PROXY/
+     HTTP_PROXY): server gio tu di qua proxy nhu ban Python, khong can
+     cai gi them. Khong dat proxy thi khong doi gi.
+  3. TAT NEN (perMessageDeflate): day la diem khac duy nhat con lai
+     trong phan bat tay so voi ban Python — tat di de loai tru.
+Cap nhat nhu cu (tat server cu, chay Chay-Live.bat 1 lan). Chat "hi"
+1 cau: neu nghe thay giong (du la giong may) thi xong; neu van im
+lang thi bao minh biet de kiem tra giong Windows.
 
 v7.9.1 PHONG GIO HIEN LUON LY DO LOI GIONG:
 ban 7.9 phong bao "Giong noi loi" nhung khong noi loi gi. Ban nay

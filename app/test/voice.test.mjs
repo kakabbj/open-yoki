@@ -169,7 +169,7 @@ test('Edge TTS: the real service URL carries a fresh Sec-MS-GEC token and the ed
   let seen = null;
   class StubWS {
     constructor(url, opts) {
-      seen = { url, headers: opts.headers, sent: [] };
+      seen = { url, headers: opts.headers, sent: [], perMessageDeflate: opts.perMessageDeflate, agent: opts.agent };
       this.h = {};
       setImmediate(() => this.h.open?.forEach(f => f()));
     }
@@ -186,6 +186,8 @@ test('Edge TTS: the real service URL carries a fresh Sec-MS-GEC token and the ed
     }
     close() {}
   }
+  const _proxySaved = {};
+  for (const k of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']) { _proxySaved[k] = process.env[k]; delete process.env[k]; }
   const v = edgeVoice({ dir, wsUrl: EDGE_TTS_URL, wsImpl: StubWS, tokenImpl: () => 'TESTTOKEN-0123456789ABCDEF' });
   const out = await v.say('Xin chào', 'smile', 'e9');
   assert.equal(out.url, '/audio/e9.mp3');
@@ -196,11 +198,14 @@ test('Edge TTS: the real service URL carries a fresh Sec-MS-GEC token and the ed
   assert.equal(seen.headers.Origin, 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold');
   assert.match(seen.headers.Cookie, /^muid=[0-9A-F]{32};$/);
   assert.match(seen.headers['User-Agent'], /Chrome\/143/);
+  assert.equal(seen.perMessageDeflate, false);
+  assert.equal(seen.agent, undefined);
   const config = seen.sent.find(s => s.includes('speech.config'));
   assert.match(config, /X-Timestamp:[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT\+0000 \(Coordinated Universal Time\)\r\nContent-Type:application\/json/);
   const ssml = seen.sent.find(s => s.includes('Path:ssml'));
   assert.match(ssml, /X-Timestamp:.*Z\r\nPath:ssml/);
   assert.match(ssml, /<speak version='1\.0'[^>]*xml:lang='en-US'><voice name='vi-VN-HoaiMyNeural'><prosody pitch='\+0Hz' rate='\+0%' volume='\+0%'>Xin chào<\/prosody>/);
+  for (const [k, val] of Object.entries(_proxySaved)) { if (val === undefined) delete process.env[k]; else process.env[k] = val; }
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -263,5 +268,33 @@ test('Edge TTS: a server close carries its code and reason into the voice error'
   const v = edgeVoice({ dir, wsUrl: EDGE_TTS_URL, wsImpl: StubWS, tokenImpl: () => 'T', status: (r, ok, err) => { if (!ok) why = err; } });
   assert.equal(await v.say('Xin chào', 'smile', 'e9'), null);
   assert.match(why, /edge tts closed early \(code 1008: token expired\)/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Edge TTS: a proxy env var is honored (agent passed to the socket), ws:// fakes are not proxied', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-edge-proxy-'));
+  let seen = null;
+  class StubWS {
+    constructor(url, opts) { seen = { agent: opts.agent }; this.h = {}; setImmediate(() => this.h.open?.forEach(f => f())); }
+    on(ev, fn) { (this.h[ev] ??= []).push(fn); return this; }
+    send(s) { if (s.includes('Path:ssml')) { const id = edgeId(s); setImmediate(() => { this.h.message?.forEach(f => f(edgeAudio(id, 100))); this.h.message?.forEach(f => f(Buffer.from(edgeEnd(id)))); }); } }
+    close() {}
+  }
+  const saved = process.env.HTTPS_PROXY;
+  try {
+    process.env.HTTPS_PROXY = 'http://127.0.0.1:18080';
+    const v = edgeVoice({ dir, wsUrl: EDGE_TTS_URL, wsImpl: StubWS, tokenImpl: () => 'T' });
+    assert.equal((await v.say('hi', 'smile', 'e1'))?.url, '/audio/e1.mp3');
+    assert.equal(typeof seen.agent?.createConnection, 'function');
+  } finally { if (saved === undefined) delete process.env.HTTPS_PROXY; else process.env.HTTPS_PROXY = saved; }
+  const fake = fakeEdge({ onSsml: (ws, s) => { const id = edgeId(s); ws.send(edgeAudio(id, 100)); ws.send(edgeEnd(id)); } });
+  try {
+    const v2 = edgeVoice({ dir, wsUrl: fake.url(), wsImpl: StubWS, tokenImpl: () => 'T' });
+    // A ws:// target never gets an agent even with a proxy set: the fake is
+    // local, and the agent is only for the real wss service.
+    process.env.HTTPS_PROXY = 'http://127.0.0.1:18080';
+    try { assert.equal((await v2.say('hi', 'smile', 'e2'))?.url, '/audio/e2.mp3'); } finally { if (saved === undefined) delete process.env.HTTPS_PROXY; else process.env.HTTPS_PROXY = saved; }
+    assert.equal(seen.agent, undefined);
+  } finally { await fake.close(); }
   fs.rmSync(dir, { recursive: true, force: true });
 });

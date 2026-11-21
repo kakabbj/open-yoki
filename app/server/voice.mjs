@@ -7,6 +7,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import WebSocket from 'ws';
 import { EDGE_WSS_URL, EDGE_WS_ORIGIN, EDGE_USER_AGENT, SEC_MS_GEC_VERSION, generateSecMsGec } from './edge-drm.mjs';
+import { proxyEnv, connectProxyAgent } from './proxy-agent.mjs';
 
 export const VOICE = { model: 'fal-ai/minimax/speech-2.8-turbo', usdPerChar: 0.00006 };
 // fal's default 128 kbps / 32 kHz and no emotion setting: a 64 kbps copy and per-face emotions made the voice sound
@@ -244,7 +245,13 @@ export function edgeVoice({ dir, voiceId = EDGE_VOICES[0].id, rate = '+0%', pitc
       const id = randomUUID().replace(/-/g, '');
       const chunks = [];
       let done = false;
-      const ws = new wsImpl(urlFor(), { headers: {
+      // No compression: the ws client's permessage-deflate offer is the one
+      // handshake parameter that differs from edge-tts (aiohttp compress=15),
+      // and the service drops some connections after the handshake (1006).
+      // A proxy env var, when set, is honored the way edge-tts does
+      // (aiohttp trust_env): without it a machine that must go through a
+      // proxy to reach Microsoft gets its direct connection dropped.
+      const wsOpts = { perMessageDeflate: false, headers: {
         'User-Agent': EDGE_USER_AGENT,
         'Pragma': 'no-cache',
         'Cache-Control': 'no-cache',
@@ -252,7 +259,10 @@ export function edgeVoice({ dir, voiceId = EDGE_VOICES[0].id, rate = '+0%', pitc
         'Accept-Encoding': 'gzip, deflate, br, zstd',
         'Accept-Language': 'en-US,en;q=0.9',
         'Cookie': `muid=${randomBytes(16).toString('hex').toUpperCase()};`,
-      } });
+      } };
+      const proxy = proxyEnv();
+      if (proxy && wsUrl.startsWith('wss://')) { try { wsOpts.agent = connectProxyAgent(proxy); } catch {} }
+      const ws = new wsImpl(urlFor(), wsOpts);
       const timer = setTimeout(() => fail(new Error('edge tts timeout')), timeoutMs);
       const fail = err => { if (done) return; done = true; clearTimeout(timer); try { ws.close(); } catch {} reject(err); };
       const finish = () => { if (done) return; done = true; clearTimeout(timer); try { ws.close(); } catch {} resolve(Buffer.concat(chunks)); };
