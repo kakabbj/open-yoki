@@ -290,10 +290,11 @@ test('bridge: 502 says why — binary missing vs serve will not start', async t 
 // A fake v2 serve, shaped after the real 2.3.2's answers: /api/session needs the
 // Basic password (401 without it), POST /session 405s with an empty body, the
 // prompt only admits the line, and the reply shows up in the message list.
-function fakeOpencodeV2({ password = 'test-password', failReply = false } = {}) {
+function fakeOpencodeV2({ password = 'test-password', failReply = false, neverReply = false } = {}) {
   const seen = { creates: [], prompts: [], switches: [], messages: 0 };
   const sessions = new Map();
   let n = 0;
+  const out = { server: null, seen, neverReply };
   const server = http.createServer((req, res) => {
     let s = '';
     req.on('data', c => { s += c; });
@@ -321,6 +322,7 @@ function fakeOpencodeV2({ password = 'test-password', failReply = false } = {}) 
           const userMsg = { id: 'msg-u-' + n, time: { created: Date.now() }, type: 'user', text: body.text };
           sess.messages.unshift(userMsg);
           setTimeout(() => {
+            if (out.neverReply) return; // the serve never answers this prompt: the asker must time out
             if (failReply) {
               sess.messages.unshift({ id: 'msg-i-' + n, time: { created: Date.now() }, type: 'idle', outcome: 'failed', error: { type: 'provider.no-route', message: 'Unsupported package for stub/test-model: ' } });
             } else {
@@ -346,7 +348,8 @@ function fakeOpencodeV2({ password = 'test-password', failReply = false } = {}) 
       return send(404, { error: 'not found' });
     });
   });
-  return { server, seen };
+  out.server = server;
+  return out;
 }
 
 test('detect: v2 authed, v2 with a wrong password, v1, and nothing at all', async t => {
@@ -429,6 +432,53 @@ test('v2 ask: a wrong password reports 401 with the auth hint', async t => {
     const opencode = createOpencode({ url: `http://127.0.0.1:${fakePort}`, password: 'wrong' });
     const asker = createSessionAsker({ opencode });
     await assert.rejects(() => asker.ask([{ role: 'user', content: 'Chào bạn' }]), /opencode 401 \(tao phien POST \/api\/session\):.*serve v2, sai mat khau/);
+  } finally { fake.server.close(); }
+});
+
+test('v2 ask: a timed-out ask drops the session, the next ask starts a fresh one', async t => {
+  // One slow reply must not poison the session: the serve keeps generating the
+  // abandoned prompt, so the next ask on the same session would queue behind
+  // it and time out too. Dropping the session breaks that chain (v7.9.7).
+  const fake = fakeOpencodeV2();
+  const fakePort = await listen(fake.server);
+  try {
+    const opencode = createOpencode({ url: `http://127.0.0.1:${fakePort}`, password: 'test-password' });
+    const asker = createSessionAsker({ opencode, pollMs: 10, pollTimeoutMs: 150 });
+    fake.neverReply = true;
+    await assert.rejects(() => asker.ask([{ role: 'user', content: 'Chào bạn' }]), /timed out waiting for the reply/);
+    assert.equal(asker.sessionId, null, 'the timed-out session is dropped');
+    assert.equal(fake.seen.creates.length, 1);
+    fake.neverReply = false;
+    const r = await asker.ask([{ role: 'user', content: 'Chào bạn lần nữa' }]);
+    assert.equal(r.text, 'Xin chào, tôi là Vy.');
+    assert.equal(fake.seen.creates.length, 2, 'the next ask creates a fresh session');
+  } finally { fake.server.close(); }
+});
+
+test('bridge e2e v2: aborting the chat/completions request drops the session', async t => {
+  // The brain aborts a slow ask at its own timeout; the bridge must notice the
+  // dropped connection and drop the session at once, not wait for its own poll
+  // timeout, or the next ask queues behind the abandoned generation (v7.9.7).
+  const fake = fakeOpencodeV2();
+  fake.neverReply = true;
+  const fakePort = await listen(fake.server);
+  try {
+    const opencode = createOpencode({ url: `http://127.0.0.1:${fakePort}`, password: 'test-password' });
+    const bridge = createBridge({ opencode, url: `http://127.0.0.1:${fakePort}`, password: 'test-password', pollTimeoutMs: 30000 });
+    const server = http.createServer((req, res) => bridge.handle(req, res));
+    const port = await listen(server);
+    try {
+      const ac = new AbortController();
+      const p = fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'xingchi/gpt-6.1-sol', messages: [{ role: 'user', content: 'Chào bạn' }] }), signal: ac.signal });
+      await new Promise(r => setTimeout(r, 80));
+      ac.abort();
+      await assert.rejects(p);
+      // the bridge notices the dropped connection well before its own poll timeout
+      const deadline = Date.now() + 2000;
+      while (bridge.asker.sessionId !== null && Date.now() < deadline) await new Promise(r => setTimeout(r, 20));
+      assert.equal(bridge.asker.sessionId, null, 'the aborted ask drops the session');
+    } finally { server.close(); }
   } finally { fake.server.close(); }
 });
 

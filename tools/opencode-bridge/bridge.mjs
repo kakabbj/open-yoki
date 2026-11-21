@@ -161,10 +161,15 @@ export function extractTextV2(messages) {
 // One long-lived OpenCode session for the whole live: the host keeps the thread, so a
 // follow-up line ("kể tiếp đi") still knows what came before. A 404 means the server
 // restarted under us — recreate the session once and retry that line.
-export function createSessionAsker({ opencode, model = DEFAULT_MODEL, pollMs = 1000, pollTimeoutMs = 180000, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
+export function createSessionAsker({ opencode, model = DEFAULT_MODEL, pollMs = 1000, pollTimeoutMs = 60000, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
   let sessionId = null;
   let sessionModel = null; // the model the session currently runs on (v2 only)
   let version = null; // 'v1' | 'v2', detected on first use
+  // A timed-out or abandoned ask leaves the serve still generating that prompt
+  // in the background; the next ask on the same session queues behind it and
+  // times out too, so one slow reply turns into a run of them (v7.9.7). Dropping
+  // the session makes the next ask start fresh instead of queuing behind the jam.
+  function reset() { sessionId = null; sessionModel = null; }
   async function detectVersion() {
     if (version) return version;
     const d = typeof opencode.detect === 'function' ? await opencode.detect() : { version: 'v1', authed: true };
@@ -220,7 +225,7 @@ export function createSessionAsker({ opencode, model = DEFAULT_MODEL, pollMs = 1
               throw err;
             }
             if (out !== null) return { text: out, model: modelOverride || model };
-            if (Date.now() > deadline) throw new Error('opencode timed out waiting for the reply');
+            if (Date.now() > deadline) { reset(); throw new Error('opencode timed out waiting for the reply'); }
             await sleep(pollMs);
           }
         }
@@ -252,7 +257,7 @@ export function createSessionAsker({ opencode, model = DEFAULT_MODEL, pollMs = 1
       throw err;
     }
   }
-  return { ask, get sessionId() { return sessionId; } };
+  return { ask, reset, get sessionId() { return sessionId; } };
 }
 
 // Where the `opencode` command lives. On Windows an npm-global install only puts
@@ -282,8 +287,8 @@ export function resolveOpencodeBin({ bin, env = process.env, platform = process.
 // The bridge itself: POST /v1/chat/completions (OpenAI shape in, OpenAI shape out)
 // and GET /health. Started with no args it serves on 127.0.0.1:20129 and starts
 // `opencode serve` when nothing answers on the OpenCode URL.
-export function createBridge({ opencode, model = DEFAULT_MODEL, url = DEFAULT_OPENCODE_URL, bin = null, password = null, resolveBin = resolveOpencodeBin, spawnFn = spawn, waitMs = 20000, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
-  const asker = createSessionAsker({ opencode, model });
+export function createBridge({ opencode, model = DEFAULT_MODEL, url = DEFAULT_OPENCODE_URL, bin = null, password = null, resolveBin = resolveOpencodeBin, spawnFn = spawn, waitMs = 20000, pollTimeoutMs = 60000, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
+  const asker = createSessionAsker({ opencode, model, pollTimeoutMs });
   let serveChild = null;
   let serveError = null; // null | 'not_found' | 'spawn_failed' | 'timeout' | 'auth_failed'
   let serveDied = false;
@@ -353,8 +358,10 @@ export function createBridge({ opencode, model = DEFAULT_MODEL, url = DEFAULT_OP
   }
   async function handle(req, res) {
     const send = (code, obj) => {
-      res.writeHead(code, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(obj));
+      try {
+        res.writeHead(code, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(obj));
+      } catch {} // the caller already hung up; nothing left to send to
     };
     try {
       const u = new URL(req.url || '/', 'http://127.0.0.1');
@@ -375,8 +382,21 @@ export function createBridge({ opencode, model = DEFAULT_MODEL, url = DEFAULT_OP
                 : 'OpenCode chua chay — chay lenh: opencode serve (xem huong dan)';
           return send(502, { error: { message: msg, type: 'opencode_down' } });
         }
-        const r = await asker.ask(messages, body.model);
-        return send(200, openaiReply(r.text, r.model));
+        // The brain aborts a slow ask at its own timeout (20s), but the serve
+        // keeps generating that prompt in the background. If the caller hangs
+        // up while the ask is still running, drop the session so the next ask
+        // starts fresh instead of queuing behind the abandoned one (v7.9.7).
+        let finished = false;
+        const onClose = () => { if (!finished) asker.reset(); };
+        res.on('close', onClose);
+        try {
+          const r = await asker.ask(messages, body.model);
+          finished = true;
+          if (!res.destroyed) return send(200, openaiReply(r.text, r.model));
+          return;
+        } finally {
+          res.off('close', onClose);
+        }
       }
       return send(404, { error: { message: 'not found', type: 'not_found' } });
     } catch (err) {

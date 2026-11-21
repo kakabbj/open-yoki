@@ -1,5 +1,22 @@
-HUONG DAN - OPEN LIVESTREAM v7.9.6
+HUONG DAN - OPEN LIVESTREAM v7.9.7
 ==============================
+
+v7.9.7 HET NAO LOI LIEN TUC + KE CHUYEN HET NGAT QUANG:
+1. NGUYEN NHAN: nao (AI qua cau noi OpenCode) tra loi cham qua 20
+   giay thi bi cat ngang, nhung cau noi KHONG biet — no van cho
+   cau tra loi cu, con server OpenCode thi van dang viet tiep cau
+   do. Cau hoi sau lai xep hang SAU cau cu da bi bo, nen cung cham
+   qua 20 giay, lai bi cat, lai xep hang... cu the nao loi lien
+   tuc, vong lap bi ket, truyen ke khong lien mach du doan truyen
+   khong can goi AI (vi vong lap dang ban xu ly cau idle truoc do).
+2. SUA: cau noi gio tu bo phien lam viec cu moi khi 1 cau hoi het
+   thoi gian cho (60 giay) hoac khi ben goi ngat ket noi giua chung
+   (nao cat ngang o 20 giay). Cau hoi sau mo phien moi, khong xep
+   hang sau cau cu nua — nao tra loi binh thuong tro lai ngay, ke
+   chuyen lien mach tro lai.
+3. Luu y: "Bang khuang | ..." o ban cu da duoc cat o v7.9.6; neu
+   ban v7.9.6 van thay no thi do server cu van dang chay — tat het
+   cua so den roi chay lai Chay-Live.bat.
 
 v7.9.6 KE CHUYEN LIEN MACH + KHONG DOC TAG/CAM XUC + BOT MAT CHU DAU + BOT NAO LOI:
 1. KE CHUYEN LIEN MACH: truoc day moi doan truyen deu phai cho goi
