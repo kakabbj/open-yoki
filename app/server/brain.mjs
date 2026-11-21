@@ -18,6 +18,10 @@ const LANGS = [['韩语', /[가-힯ᄀ-ᇿ]/], ['日语', /[぀-ヿ]/], ['俄语
 const VIET = /[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệịỉĩọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/i;
 export const langOf = t => { for (const [n, re] of LANGS) if (re.test(t)) return n; return !/[㐀-鿿]/.test(t) && /[a-z]{2}/i.test(t) ? (VIET.test(t) ? '越南语' : '外语') : null; };
 const langLine = t => { const l = langOf(t); return !l ? '' : l === '外语' ? '\n这条弹幕不是中文：他用什么语言（英语、西班牙语、印尼语……）就只用那种语言回他，40 词以内，一个中文字都不要。用英语说行情按英文习惯：跌是 red、涨是 green（和中文的红涨绿跌正好相反）。' : `\n这条弹幕是${l}：这次只用${l}回他，简短，一个中文字都不要。`; };
+// A Vietnamese host always answers in Vietnamese, whatever the comment's language
+// (v7.7: the model is Chinese and the prompt machinery is mostly Chinese, so without
+// this the reply sometimes comes back in Chinese); other hosts answer in the comment's.
+const langLineFor = (idol, t) => idol.lang === 'vi' ? '\nTrả lời bằng tiếng Việt, không một chữ Trung nào.' : langLine(t);
 
 const QUIET = ['idle', 'self', 'more'];   // kinds where she may choose to say nothing
 export const tonesOf = idol => idol.avatar?.doubao?.tones || {};
@@ -60,6 +64,13 @@ export function recentFor(w) {
 // for things about his life she can ask after later, not what he said to her (small talk gives her nothing to pick up
 // the next night).
 const NOTE_ASK = '\n如果这条弹幕里有关于他这个人、下次见面能接着问的事（他在哪、做什么、拿着什么、亏了还是赚了、在等什么结果、说过要去做什么），在台词后面另起一行写“记：”加这件事，15 字以内。他对你说的客套话、叫你老师、问你看法这种不算，不写。';
+// Same note, for the Vietnamese host: film and life facts, no trading (v7.7).
+const NOTE_ASK_VI = '\nNếu bình luận này có chuyện về người đó mà lần sau gặp lại có thể hỏi tiếp (người đó ở đâu, làm gì, đang xem phim gì, thích thể loại nào, đang chờ kết quả gì, nói sẽ làm gì), viết thêm một dòng sau lời thoại: “记：” + chuyện đó, dưới 15 chữ. Lời khách sáo, gọi bạn là cô giáo, hỏi ý kiến thì không tính, không viết.';
+const noteAskFor = idol => idol.lang === 'vi' ? NOTE_ASK_VI : NOTE_ASK;
+// How long a line runs, in the host's own language (v7.7).
+const lengthLine = (idol, long) => idol.lang === 'vi'
+  ? (long ? '\nLần này là đoạn cảm nghĩ dài, 150 đến 250 chữ, ngắn gọn thì tốt hơn, có thể chia mấy câu.' : '\nMỗi lần chỉ nói một đoạn, dưới 60 từ.')
+  : (long ? '\n这次是长段感言，150 到 250 字，宁短勿长，可以分几句。' : '\n每次只说一段话，60 字以内（英文 40 词以内）。');
 export function takeNote(raw) {
   // 記 too: answering in Japanese the model may write "記：- 記：…", which must never be read out.
   const m = String(raw || '').match(/(?:\n|[\s。！？!?…~～])\s*[-–]?\s*[记記][:：]\s*(?:[-–]\s*)?(?:[记記][:：]\s*)?([^\n]{1,30})\s*$/);
@@ -207,7 +218,7 @@ const alsoLine = e => e.also?.length ? `\n同一时间弹幕里还有：${e.also
 export function promptFor(idol, e) {
   const hook = () => `（这次的套路：${pick(idol.hooks)}。用你自己的话，40 字以内，别照抄例子。）`;
   switch (e.kind) {
-    case 'chat': return { text: `【弹幕 by ${e.name || tail(e.addr)}】${e.text}${alsoLine(e)}${langLine(e.text)}${NOTE_ASK}` };
+    case 'chat': return { text: `【弹幕 by ${e.name || tail(e.addr)}】${e.text}${alsoLine(e)}${langLineFor(idol, e.text)}${noteAskFor(idol)}` };
     case 'request': return { text: `【点播】${e.name || tail(e.addr)} 点你做「${e.action}」。动作标签必须写[${e.action}]，一边做一边回他一句，30 字以内。` };
     case 'market': return { text: `【行情异动】${e.coin} 这 ${e.minutes} 分钟${e.pct > 0 ? '突然拉了' : '突然砸了'} ${Math.abs(e.pct).toFixed(1)}%，现在 ${e.price} 美元左右。第一时间反应一下，像看盘时脱口而出那样，可以说你觉得还会不会接着走。40 字以内。` };
     // A quiet room is her cue, not a rest: telling her she may stay silent leaves minutes of dead air and lines like
@@ -473,7 +484,7 @@ export function factFor(idol, e, w) {
   const who = e.name || (e.addr ? tail(e.addr) : '有人');
   const v = e.viewers > 1 ? `，${e.viewers} 个人在看` : e.viewers === 1 ? '，有一个人在看' : '，这会儿没人在看';
   switch (e.kind) {
-    case 'chat': return `【弹幕】${who}：${e.text}${e.also?.length ? '\n' + e.also.map(a => `【弹幕】${a.name}：${a.text}`).join('\n') : ''}${langLine(e.text)}${NOTE_ASK}`;
+    case 'chat': return `【弹幕】${who}：${e.text}${e.also?.length ? '\n' + e.also.map(a => `【弹幕】${a.name}：${a.text}`).join('\n') : ''}${langLineFor(idol, e.text)}${noteAskFor(idol)}`;
     case 'request': return `【点播】${who} 点你做「${e.action}」（动作标签写 [${e.action}]）。`;
     case 'join': return `【直播间】${e.names?.length ? e.names.join('、') + ' 刚进来' : '刚有人进来'}。${e.regulars?.length ? `${e.regulars.join('、')} 是你认识的老朋友。` : ''}`;
     case 'thanks': {
@@ -620,7 +631,7 @@ export function createBrain({ idol, world, ask, speak, direct: directOn = false,
     try {
       const note = heart?.();
       const messages = direct ? [{ role: 'system', content: personaOf(idol, typeof idol.mouth.direct === 'function' ? idol.mouth.direct(rand) : idol.mouth.direct) + `\n\n画面里的你：${idol.stages[0].look}。` + (market ? market.lineFor(e) : '') + memoryFor(memory, e, rand, pageOf) + roomFor(world.w, e, now()).replace(/\n接着上面的聊[^\n]*$/, '') + soulFor(idol, memory, e, now(), rand) + lifeFor(e) + moodLine(e) + heartLine(note, e) }, { role: 'user', content: p.text }]
-        : [{ role: 'system', content: personaFor(note) + '\n' + contextFor(idol) + (market ? market.lineFor(e) : '') + memoryFor(memory, e, rand, pageOf) + (['chat', 'request', 'idle'].includes(e.kind) ? roomFor(world.w, e, now()) : '') + soulFor(idol, memory, e, now(), rand) + lifeFor(e) + moodLine(e) + heartLine(note, e) + examplesFor(e, note) + ticsFor() + waitingFor(world.w, now()) + (p.long ? '\n这次是长段感言，150 到 250 字，宁短勿长，可以分几句。' : '\n每次只说一段话，60 字以内（英文 40 词以内）。') }, { role: 'user', content: p.text + recentFor(world.w) }];
+        : [{ role: 'system', content: personaFor(note) + '\n' + contextFor(idol) + (market ? market.lineFor(e) : '') + memoryFor(memory, e, rand, pageOf) + (['chat', 'request', 'idle'].includes(e.kind) ? roomFor(world.w, e, now()) : '') + soulFor(idol, memory, e, now(), rand) + lifeFor(e) + moodLine(e) + heartLine(note, e) + examplesFor(e, note) + ticsFor() + waitingFor(world.w, now()) + lengthLine(idol, p.long) }, { role: 'user', content: p.text + recentFor(world.w) }];
       let r = await ask(messages, { long: p.long, signal: abort.signal });
       spend.usd += r.cost; spend.calls++;
       let inner = takeInner(r.text); r = { ...r, text: inner.text };
@@ -630,6 +641,19 @@ export function createBrain({ idol, world, ask, speak, direct: directOn = false,
         messages[1].content += `\n\n这句跟你刚说过的话重复了（「${again}」）。换一个完全不同的说法：不同的开头、不同的结尾、不同的意思角度。`;
         try { const r2 = await ask(messages, { long: p.long, signal: abort.signal }); spend.usd += r2.cost; spend.calls++; inner = takeInner(r2.text); r = { ...r2, text: inner.text }; } catch {}
         console.log(`repeat "${again}" rewritten${repeatOf(r.text, world.w.recent.slice(0, 12)) ? ', still repeats' : ''}`);
+      }
+      // A Vietnamese host sometimes still answers in Chinese (the model is Chinese and
+      // most of the prompt machinery is): one rewrite in Vietnamese, then keep whatever
+      // comes back. Tags are stripped before measuring, they are never spoken.
+      if (idol.lang === 'vi' && !p.long) {
+        const bare = String(r.text || '').replace(/\[[^\]]*\]/g, '');
+        const letters = bare.replace(/[^\p{L}]/gu, '');
+        const cjk = (letters.match(/[\u4e00-\u9fff]/g) || []).length;
+        if (letters.length && cjk / letters.length > 0.3) {
+          messages[1].content += '\n\nCâu vừa rồi có chữ Trung, viết lại hoàn toàn bằng tiếng Việt, không một chữ Trung nào.';
+          try { const r2 = await ask(messages, { long: p.long, signal: abort.signal }); spend.usd += r2.cost; spend.calls++; inner = takeInner(r2.text); r = { ...r2, text: inner.text }; } catch {}
+          console.log('chinese reply rewritten');
+        }
       }
       const sg = takeSong(r.text);
       const bet = takeCall(sg.text);

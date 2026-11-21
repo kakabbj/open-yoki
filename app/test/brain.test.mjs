@@ -115,3 +115,41 @@ test('an over-long speech is cut back to the last full sentence', () => {
   const out = fitLength('今天好累喔。'.repeat(80));
   assert.ok(out.length <= 300 && out.endsWith('。'));
 });
+
+// v7.7: the Vietnamese host's prompts are Vietnamese, with a Vietnamese-only rule
+// first — the model is Chinese and used to answer in Chinese sometimes.
+import vietIdol from '../idols/viet/config.mjs';
+
+test('the Vietnamese host answers in Vietnamese only, with no trading left in the persona', async () => {
+  const world = createWorld({ idol: vietIdol });
+  const seen = [];
+  const spoken = [];
+  const brain = createBrain({ idol: vietIdol, world, ask: async m => { seen.push(m); return { text: '[开心][比心]Chào bạn nha, phim này hay lắm', cost: 0 }; }, speak: async l => { spoken.push(l); }, viewers: () => 0 });
+  brain.add({ kind: 'chat', addr: A, name: 'kakap', text: 'hi' });
+  brain.start();
+  await new Promise(r => setTimeout(r, 200));
+  brain.stop();
+  assert.equal(spoken[0].text, 'Chào bạn nha, phim này hay lắm');
+  const system = seen[0][0].content, user = seen[0][1].content;
+  assert.match(system, /QUAN TRỌNG NHẤT: Bạn chỉ trả lời bằng tiếng Việt/);
+  assert.match(system, /Mỗi lần chỉ nói một đoạn, dưới 60 từ\./);
+  assert.match(user, /Trả lời bằng tiếng Việt, không một chữ Trung nào\./);
+  assert.doesNotMatch(system, /亏了|被套|爆仓|看盘|币种|BTC|ETH/);
+  assert.match(promptFor(vietIdol, { kind: 'chat', addr: A, name: 'kakap', text: 'hi' }, world.w).text, /Trả lời bằng tiếng Việt/);
+});
+
+test('a Chinese reply from a Vietnamese host is rewritten once in Vietnamese', async () => {
+  const world = createWorld({ idol: vietIdol });
+  const spoken = [];
+  let calls = 0;
+  const brain = createBrain({ idol: vietIdol, world, ask: async m => {
+    calls++;
+    return { text: calls === 1 ? '[开心][比心]你好呀，今天很开心' : '[开心][比心]Chào bạn nha', cost: 0 };
+  }, speak: async l => { spoken.push(l); }, viewers: () => 0 });
+  brain.add({ kind: 'chat', addr: A, name: 'kakap', text: 'hi' });
+  brain.start();
+  await new Promise(r => setTimeout(r, 300));
+  brain.stop();
+  assert.equal(calls, 2);
+  assert.equal(spoken[0].text, 'Chào bạn nha');
+});

@@ -3,9 +3,10 @@
 // past it, or when fal fails, she keeps talking in text only (each route fails on its own).
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import WebSocket from 'ws';
+import { EDGE_WSS_URL, EDGE_WS_ORIGIN, EDGE_USER_AGENT, SEC_MS_GEC_VERSION, generateSecMsGec } from './edge-drm.mjs';
 
 export const VOICE = { model: 'fal-ai/minimax/speech-2.8-turbo', usdPerChar: 0.00006 };
 // fal's default 128 kbps / 32 kHz and no emotion setting: a 64 kbps copy and per-face emotions made the voice sound
@@ -205,35 +206,59 @@ export function doubaoVoice({ key, dir, dailyChars = 60000, voiceId, context = '
 // (vi-VN-HoaiMyNeural by default). No key, no account, no billing — the request goes to
 // Microsoft over WebSocket and the mp3 comes back 24 kHz / 48 kbps mono. Nothing is kept
 // warm between lines: one connection per line, closed at turn.end.
-export const EDGE_TTS_URL = 'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB9E31F416D75A5A43';
+// The service now requires a Sec-MS-GEC token in the URL (edge-tts 7.3.1): without it
+// the connection is refused and there is no audio at all. The token is time-based
+// (5-minute buckets, see edge-drm.mjs), so the URL is built fresh for every line.
+export const EDGE_TTS_URL = EDGE_WSS_URL;
 export const EDGE_VOICES = [
   { id: 'vi-VN-HoaiMyNeural', name: 'Hoài My (nữ)' },
   { id: 'vi-VN-NamMinhNeural', name: 'Nam Minh (nam)' },
 ];
 export const edgeVoiceId = id => EDGE_VOICES.some(v => v.id === id) ? id : EDGE_VOICES[0].id;
 
-export function edgeVoice({ dir, voiceId = EDGE_VOICES[0].id, rate = '+0%', pitch = '+0Hz', dailyChars = 1000000, wsImpl = WebSocket, wsUrl = EDGE_TTS_URL, execImpl = null, timeoutMs = 20000, tries = 2, now = () => Date.now(), keepFiles = 300, status }) {
+export function edgeVoice({ dir, voiceId = EDGE_VOICES[0].id, rate = '+0%', pitch = '+0Hz', dailyChars = 1000000, wsImpl = WebSocket, wsUrl = EDGE_TTS_URL, tokenImpl = generateSecMsGec, execImpl = null, timeoutMs = 20000, tries = 2, now = () => Date.now(), keepFiles = 300, status }) {
   fs.mkdirSync(dir, { recursive: true });
   let day = '', used = 0;
   const today = () => new Date(now() + 8 * 3600e3).toISOString().slice(0, 10);
   const room = text => { if (today() !== day) { day = today(); used = 0; } return used + text.length <= dailyChars; };
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const ssml = text => `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="vi-VN"><voice name="${voiceId}"><prosody rate="${rate}" pitch="${pitch}">${esc(text)}</prosody></voice></speak>`;
+  // Same SSML shape as edge-tts (single quotes, xml:lang en-US, the voice name picks the language).
+  const ssml = text => `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='${voiceId}'><prosody pitch='${pitch}' rate='${rate}' volume='+0%'>${esc(text)}</prosody></voice></speak>`;
+  // edge-tts date_to_string(): "Sat Nov 21 2026 05:27:49 GMT+0000 (Coordinated Universal Time)", UTC.
+  const dateStr = () => {
+    const d = new Date();
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const mons = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const p = n => String(n).padStart(2, '0');
+    return `${days[d.getUTCDay()]} ${mons[d.getUTCMonth()]} ${p(d.getUTCDate())} ${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} GMT+0000 (Coordinated Universal Time)`;
+  };
+  // The real service gets a fresh token + connection id per line; a test fake URL is used as-is.
+  const urlFor = () => wsUrl.startsWith(EDGE_WSS_URL)
+    ? `${EDGE_WSS_URL}&ConnectionId=${randomUUID().replace(/-/g, '')}&Sec-MS-GEC=${tokenImpl()}&Sec-MS-GEC-Version=${SEC_MS_GEC_VERSION}`
+    : wsUrl;
 
   // One request: speech.config, then the SSML. Audio arrives as binary frames whose
   // header says Path:audio; Path:turn.end closes the turn. Resolves with the mp3 bytes.
   function synth(text) {
     return new Promise((resolve, reject) => {
-      const id = randomUUID();
+      const id = randomUUID().replace(/-/g, '');
       const chunks = [];
       let done = false;
-      const ws = new wsImpl(wsUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0' } });
+      const ws = new wsImpl(urlFor(), { headers: {
+        'User-Agent': EDGE_USER_AGENT,
+        'Pragma': 'no-cache',
+        'Cache-Control': 'no-cache',
+        'Origin': EDGE_WS_ORIGIN,
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cookie': `muid=${randomBytes(16).toString('hex').toUpperCase()};`,
+      } });
       const timer = setTimeout(() => fail(new Error('edge tts timeout')), timeoutMs);
       const fail = err => { if (done) return; done = true; clearTimeout(timer); try { ws.close(); } catch {} reject(err); };
       const finish = () => { if (done) return; done = true; clearTimeout(timer); try { ws.close(); } catch {} resolve(Buffer.concat(chunks)); };
       ws.on('open', () => {
-        ws.send(`X-Timestamp:${new Date().toString()}\r\nContent-Type: application/json; charset=utf-8\r\nPath: speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"true"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`);
-        ws.send(`X-RequestId:${id}\r\nContent-Type: application/ssml+xml\r\nX-Timestamp:${new Date().toString()}\r\nPath: ssml\r\n\r\n${ssml(text)}`);
+        ws.send(`X-Timestamp:${dateStr()}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"true"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}\r\n`);
+        ws.send(`X-RequestId:${id}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:${dateStr()}Z\r\nPath:ssml\r\n\r\n${ssml(text)}`);
       });
       ws.on('message', data => {
         const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);

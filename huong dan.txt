@@ -1,5 +1,28 @@
-HUONG DAN - OPEN LIVESTREAM v7.6
+HUONG DAN - OPEN LIVESTREAM v7.7
 ==============================
+
+v7.7 SUA 2 LOI BAN BAO:
+1) CHUA CO TIENG — NGUYEN NHAN DA RO: ban v7.6 dung Edge TTS nhung
+thieu token Sec-MS-GEC ma Microsoft moi bat buoc (tu 2025), nen may
+chu Microsoft tu choi ket noi, khong co tieng nao ve. Ban nay gui
+dung token + header nhu thu vien edge-tts ma T Review dung (da doi
+chieu token khop 100% voi thu vien goc). Ban chi can giai nen ban
+moi, chay lai Chay-Live.bat — khong can nhap key gi them.
+Neu van im lang: mo http://127.0.0.1:4370/api/state xem dong
+routes.voice: "ok" la giong dang chay, "down" la loi cu the (hien
+trong why.voice). Luu y: phai bat tieng trong phong (nut duoi man
+hinh live phai hien "Tat tieng" — nghia la tieng dang bat).
+
+2) CO LUC TRA LOI CHU TRUNG — NGUYEN NHAN DA RO: huong dan dua cho
+model (AI) truoc day hon 80% la chu Trung (ke ca phan noi ve trade
+coin, khong lien quan gi toi phim), nen model Xingchi (model Trung
+Quoc) thi thoang tra loi bang chu Trung. Ban nay:
+- Dich HET huong dan sang tieng Viet, bo sach noi dung trade coin,
+  chi noi ve phim; luat "chi tra loi bang tieng Viet" dat len dong
+  dau tien cua huong dan.
+- Neu model van lo tra loi chu Trung, server tu bao no viet lai
+  bang tieng Viet mot lan roi moi hien len phong.
+Ban khong can lam gi them, cu chay nhu cu.
 
 v7.6 GIONG NOI MIEN PHI, KHONG CAN KEY (giong T Review dung):
 truoc day host chi co tieng khi ban nhap key Volc + Voice ID (Doubao)

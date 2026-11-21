@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { falVoice, doubaoVoice, edgeVoice, edgeVoiceId, spokenLang } from '../server/voice.mjs';
+import { falVoice, doubaoVoice, edgeVoice, edgeVoiceId, spokenLang, EDGE_TTS_URL } from '../server/voice.mjs';
 import { WebSocketServer } from 'ws';
 
 test('a failed voice request is retried once with the picked voice and full quality', async () => {
@@ -96,7 +96,7 @@ function fakeEdge({ onSsml }) {
   wss.on('connection', ws => ws.on('message', data => {
     const s = data.toString();
     received.push(s);
-    if (s.includes('Path: ssml')) onSsml(ws, s);
+    if (s.includes('Path:ssml')) onSsml(ws, s);
   }));
   return { wss, received, url: () => `ws://127.0.0.1:${wss.address().port}`, close: () => new Promise(r => wss.close(r)) };
 }
@@ -114,7 +114,7 @@ test('Edge TTS: SSML with the picked voice comes back as an mp3 under /audio/', 
     assert.equal(out.durationMs, 1000);   // 6000 bytes at 48 kbps
     assert.equal(fs.readFileSync(path.join(dir, 'e1.mp3')).length, 6000);
     assert.equal(v.provider, 'edge');
-    const ssml = fake.received.find(s => s.includes('Path: ssml'));
+    const ssml = fake.received.find(s => s.includes('Path:ssml'));
     assert.match(ssml, /vi-VN-NamMinhNeural/);
     assert.match(ssml, /Xin chào &amp; &lt;bạn&gt;/);
     assert.match(fake.received.find(s => s.includes('speech.config')), /audio-24khz-48kbitrate-mono-mp3/);
@@ -159,6 +159,49 @@ test('edgeVoiceId falls back to Hoài My for an unknown voice', () => {
   assert.equal(edgeVoiceId('vi-VN-NamMinhNeural'), 'vi-VN-NamMinhNeural');
   assert.equal(edgeVoiceId('nope'), 'vi-VN-HoaiMyNeural');
   assert.equal(edgeVoiceId(''), 'vi-VN-HoaiMyNeural');
+});
+
+// v7.7: the real read-aloud service refuses connections without a Sec-MS-GEC
+// token (edge-tts 7.3.1). A stub socket records the URL and headers instead of
+// connecting, and answers the SSML with audio + turn.end.
+test('Edge TTS: the real service URL carries a fresh Sec-MS-GEC token and the edge-tts headers', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-edge-'));
+  let seen = null;
+  class StubWS {
+    constructor(url, opts) {
+      seen = { url, headers: opts.headers, sent: [] };
+      this.h = {};
+      setImmediate(() => this.h.open?.forEach(f => f()));
+    }
+    on(ev, fn) { (this.h[ev] ??= []).push(fn); return this; }
+    send(s) {
+      seen.sent.push(s);
+      if (s.includes('Path:ssml')) {
+        const id = edgeId(s);
+        setImmediate(() => {
+          this.h.message?.forEach(f => f(edgeAudio(id, 6000)));
+          this.h.message?.forEach(f => f(Buffer.from(edgeEnd(id))));
+        });
+      }
+    }
+    close() {}
+  }
+  const v = edgeVoice({ dir, wsUrl: EDGE_TTS_URL, wsImpl: StubWS, tokenImpl: () => 'TESTTOKEN-0123456789ABCDEF' });
+  const out = await v.say('Xin chào', 'smile', 'e9');
+  assert.equal(out.url, '/audio/e9.mp3');
+  assert.match(seen.url, /^wss:\/\/speech\.platform\.bing\.com\/consumer\/speech\/synthesize\/readaloud\/edge\/v1\?TrustedClientToken=/);
+  assert.match(seen.url, /&ConnectionId=[0-9a-f]{32}/);
+  assert.match(seen.url, /&Sec-MS-GEC=TESTTOKEN-0123456789ABCDEF/);
+  assert.match(seen.url, /&Sec-MS-GEC-Version=2-143\.0\.3650\.75/);
+  assert.equal(seen.headers.Origin, 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold');
+  assert.match(seen.headers.Cookie, /^muid=[0-9A-F]{32};$/);
+  assert.match(seen.headers['User-Agent'], /Chrome\/143/);
+  const config = seen.sent.find(s => s.includes('speech.config'));
+  assert.match(config, /X-Timestamp:[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT\+0000 \(Coordinated Universal Time\)\r\nContent-Type:application\/json/);
+  const ssml = seen.sent.find(s => s.includes('Path:ssml'));
+  assert.match(ssml, /X-Timestamp:.*Z\r\nPath:ssml/);
+  assert.match(ssml, /<speak version='1\.0'[^>]*xml:lang='en-US'><voice name='vi-VN-HoaiMyNeural'><prosody pitch='\+0Hz' rate='\+0%' volume='\+0%'>Xin chào<\/prosody>/);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 // End to end (v7.6): a real server in test mode, Edge as the voice, a stub brain —
