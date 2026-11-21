@@ -1,5 +1,17 @@
-HUONG DAN - OPEN LIVESTREAM v7.7
+HUONG DAN - OPEN LIVESTREAM v7.8
 ==============================
+
+v7.8 TIENG BAT SAN KHI MO PHONG (khong can bam nut tieng nua):
+ban v7.7 sua dung phan giong doc tren server, nhung phong web mo
+len mac dinh la TAT TIENG (nut hien "Bat tieng") nen neu ban khong
+bam nut thi van im lang — do la ly do "van khong co tieng".
+Tu ban nay: mo phong len la tieng BAT SAN, nut hien "Tat tieng".
+Trinh duyet chi cho phat tieng sau lan bam/phim dau tien, nen cau
+dang hien luc ban bam chuot/phim lan dau se tu phat lai.
+Neu muon tat tieng thi bam nut "Tat tieng" mot lan.
+Neu phong hien dong trang thai "Long tieng Loi" (duoi man hinh live)
+thi loi o server, khong phai o nut tieng — mo
+http://127.0.0.1:4370/api/state xem dong why.voice roi gui minh.
 
 v7.7 SUA 2 LOI BAN BAO:
 1) CHUA CO TIENG — NGUYEN NHAN DA RO: ban v7.6 dung Edge TTS nhung

@@ -10,7 +10,7 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const hhmm = at => new Date(at).toLocaleTimeString(lang === 'vi' ? 'vi-VN' : lang === 'en' ? 'en-GB' : 'zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
 const S = 'livehost.';
 
-let room = null, shownLine = null, sound = false, diaryDate = null;
+let room = null, shownLine = null, sound = true, diaryDate = null, lastLine = null;
 let token = localStorage.getItem(S + 'token'), me = null;
 
 // ---------- picture ----------
@@ -113,6 +113,7 @@ const liveLag = () => {
 let typing = null;
 function showLine(line, snapTime) {
   if (!line || shownLine === line.id) return;
+  lastLine = line;
   const first = shownLine === null;
   shownLine = line.id;
   const fresh = !first || (snapTime || Date.now()) - line.at < 2500;
@@ -341,8 +342,20 @@ function setSound(on) {
   if (volc?.up) return volcAudio(on);
   if (liveShown()) { video().muted = !on; if (on) video().play().catch(() => {}); return; }
   if (!on) player.pause();
+  else if (lastLine?.audio) { player.src = lastLine.audio; player.play().catch(() => {}); }
 }
 $('soundBtn').onclick = () => setSound(!sound);
+
+// Browsers block sound before the first click or keypress, so a line that arrived
+// before that stays silent even with sound on: the first interaction replays the
+// line showing at that moment (only if it never played).
+let audioUnlocked = false;
+const unlockAudio = () => {
+  if (audioUnlocked) return; audioUnlocked = true;
+  if (sound && lastLine?.audio && !liveShown() && player.paused && player.currentTime === 0) { player.src = lastLine.audio; player.play().catch(() => {}); }
+};
+addEventListener('pointerdown', unlockAudio);
+addEventListener('keydown', unlockAudio);
 
 function showLang() { $('langBtn').textContent = lang === 'en' ? 'VI' : lang === 'vi' ? '中' : 'EN'; }
 $('langBtn').onclick = () => {
