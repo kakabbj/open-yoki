@@ -10,6 +10,7 @@
 // It drives the `claude` CLI (claudeRunner) or DeepSeek directly (heartds.mjs dsRunner).
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 // 我慢慢变成的样子.md is hers: the operator wrote 我是谁, she writes how she has changed since, so it shapes every beat.
@@ -28,18 +29,29 @@ const DENY = 'Bash WebFetch WebSearch Task NotebookEdit Read(//etc/**) Read(//pr
 export function claudeRunner({ key, model, configDir, bin = 'claude', timeoutMs = 120e3, baseUrl = 'https://api.anthropic.com', keyVar = 'ANTHROPIC_API_KEY' }) {
   return ({ cwd, system, message, resume }) => new Promise((resolve, reject) => {
     // Read is held to her home, but Grep and Glob could reach the state dir next to it
-    // (her logs, sessions, the group's ids). That dir and /tmp are shut too.
-    // (A scratch copy of her home can live in /tmp; her own folder is never shut.)
-    const shut = [path.dirname(configDir), '/tmp'].map(d => path.resolve(d)).filter(d => !(path.resolve(cwd) + '/').startsWith(d + '/'))
+    // (her logs, sessions, the group's ids). That dir and the temp dir are shut too.
+    // (A scratch copy of her home can live in the temp dir; her own folder is never shut.)
+    // path.sep, not '/': on Windows the '+'/'/' comparison never matched, so a home
+    // inside the temp dir was shut along with it.
+    const shut = [path.dirname(configDir), os.tmpdir()].map(d => path.resolve(d)).filter(d => !(path.resolve(cwd) + path.sep).startsWith(d + path.sep))
       .map(d => `Read(/${d}/**)`).join(' ');
-    const args = ['-p', '--model', model, '--output-format', 'json', '--append-system-prompt', system,
+    // Windows, since Node's CVE-2024-27980 fix: spawn refuses a .bat/.cmd file without a
+    // shell (EINVAL), and the real claude CLI there is a .cmd shim, so go through the
+    // shell. A " in the system prompt would break out of the shell's quoting, so it
+    // becomes ' there (the message itself goes in on stdin, safe).
+    // A .js bin runs under this node instead: tests use a Node fake (test/fake-claude.mjs),
+    // so no shell script is needed on any platform.
+    const shell = process.platform === 'win32';
+    const args = ['-p', '--model', model, '--output-format', 'json', '--append-system-prompt', shell ? String(system).replace(/"/g, "'") : system,
       '--permission-mode', 'acceptEdits', '--allowedTools', ALLOW, '--disallowedTools', `${DENY} ${shut}`.trim()];
     if (resume) args.push('--resume', resume);
     // Only what the CLI needs, not the server's other keys. HOME too: the service user has none it can write
     // (ProtectHome), and the CLI keeps a little state there.
     const env = { PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', LANG: process.env.LANG || 'C.UTF-8', HOME: path.dirname(configDir),
       ANTHROPIC_BASE_URL: baseUrl, [keyVar]: key, CLAUDE_CONFIG_DIR: configDir };
-    const p = spawn(bin, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const opts = { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] };
+    const p = /\.m?js$/i.test(bin) ? spawn(process.execPath, [bin, ...args], opts)
+      : spawn(bin, args, { ...opts, ...(shell ? { shell: true } : {}) });
     let out = '', err = '';
     const t = setTimeout(() => { p.kill('SIGKILL'); reject(new Error('heart beat timed out')); }, timeoutMs);
     p.stdout.on('data', d => { out += d; });

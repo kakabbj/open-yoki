@@ -4,7 +4,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHeart, claudeRunner } from '../server/heart.mjs';
+
+// The fake `claude` the runner spawns: a Node script (test/fake-claude.mjs), so it
+// runs on every platform without a shell script or a .cmd file.
+const fakeClaude = () => fileURLToPath(new URL('./fake-claude.mjs', import.meta.url));
 import { createWorld } from '../server/world.mjs';
 import { createBrain, worn } from '../server/brain.mjs';
 
@@ -79,9 +84,7 @@ test('pace: quick on air, a quiet beat now and then in her waking hours, asleep 
 });
 
 test('the claude runner keeps her in her own folder and sends the message on stdin', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'heart-bin-')), bin = path.join(dir, 'claude');
-  fs.writeFileSync(bin, `#!/bin/sh\nprintf '%s\\n' "$@" > "${dir}/args"\ncat > "${dir}/stdin"\nenv > "${dir}/env"\necho '{"session_id":"X","result":"ok","total_cost_usd":0.01}'\n`);
-  fs.chmodSync(bin, 0o755);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'heart-bin-')), bin = fakeClaude();
   process.env.VIDU_KEY_TEST = 'x';
   const run = claudeRunner({ key: 'k-test', model: 'claude-sonnet-5-5', configDir: path.join(dir, 'st', 'cfg'), bin });
   const j = await run({ cwd: dir, system: 'SYS', message: '【直播间】你好', resume: 'R1' });
@@ -90,8 +93,10 @@ test('the claude runner keeps her in her own folder and sends the message on std
   assert.match(args, /--resume\nR1/);
   assert.match(args, /Read\(\.\/\*\*\) Edit\(\.\/\*\*\) Write\(\.\/\*\*\) Glob Grep/);
   assert.match(args, /Bash WebFetch .*Read\(\/\/etc\/\*\*\).*Read\(\/\/proc\/\*\*\)/);
-  // the state dir beside her home (logs, sessions, group ids) and /tmp are shut to Read, Grep and Glob alike
-  assert.ok(args.includes(`Read(/${path.resolve(dir, 'st')}/**)`), 'state dir shut'); assert.equal(args.includes('Read(//tmp/**)'), !path.resolve(dir).startsWith('/tmp/'), '/tmp shut unless her home is in it');
+  // the state dir beside her home (logs, sessions, group ids) and the temp dir are shut to Read, Grep and Glob alike
+  assert.ok(args.includes(`Read(/${path.resolve(dir, 'st')}/**)`), 'state dir shut');
+  const tmp = path.resolve(os.tmpdir());
+  assert.equal(args.includes(`Read(/${tmp}/**)`), !path.resolve(dir).startsWith(tmp + path.sep), 'temp dir shut unless her home is in it');
   assert.equal(fs.readFileSync(path.join(dir, 'stdin'), 'utf8'), '【直播间】你好');
   const env = fs.readFileSync(path.join(dir, 'env'), 'utf8');
   assert.match(env, /^ANTHROPIC_API_KEY=k-test$/m); assert.match(env, /^ANTHROPIC_BASE_URL=https:\/\/api\.anthropic\.com$/m);
@@ -185,14 +190,7 @@ test('her day in the note wears out like any other thought', () => {
 // A relay first, Anthropic behind it; a failed relay never stops her heart.
 test('heart relay: a bearer-token relay runner sends its own key var to its own base, falls back on failure', async () => {
   const { fallbackRunner } = await import('../server/heart.mjs');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'heart-relay-'));
-  // Windows cannot run an extensionless #!/bin/sh script (spawn ENOENT), so the
-  // fake is a .cmd there: Node spawns .cmd files via cmd.exe, and `set` dumps the
-  // env in the same NAME=value lines the test asserts on.
-  const win = process.platform === 'win32';
-  const bin = path.join(dir, win ? 'claude.cmd' : 'claude');
-  if (win) fs.writeFileSync(bin, `@echo off\r\nset > "${dir}\\env"\r\necho {"session_id":"X","result":"ok","total_cost_usd":0.01}\r\n`);
-  else { fs.writeFileSync(bin, `#!/bin/sh\ncat > /dev/null\nenv > "${dir}/env"\necho '{"session_id":"X","result":"ok","total_cost_usd":0.01}'\n`); fs.chmodSync(bin, 0o755); }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'heart-relay-')), bin = fakeClaude();
   const relay = claudeRunner({ key: 'r-test', keyVar: 'ANTHROPIC_AUTH_TOKEN', baseUrl: 'https://relay.example.com', model: 'claude-sonnet-5-5', configDir: path.join(dir, 'cfg'), bin });
   const j = await fallbackRunner([['relay', relay]])({ cwd: dir, system: 'S', message: 'm' });
   assert.equal(j.via, 'relay'); assert.equal(j.result, 'ok');
