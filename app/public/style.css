@@ -81,6 +81,19 @@ body.offline .air i { background: #4a4855; box-shadow: none; animation: none; }
 .diary-dates button { background: none; border: 1px solid var(--edge); border-radius: 99px; padding: 2px 10px; font-size: 12px; color: var(--dusk); }
 .diary-dates button.on { color: var(--night); background: var(--amber); border-color: var(--amber); }
 .diary article { font: 15px/1.9 var(--note); color: #d9d2c2; padding: 14px 16px; border-radius: 4px; background: repeating-linear-gradient(transparent 0 calc(1.9em - 1px), rgba(236, 230, 216, .07) calc(1.9em - 1px) 1.9em), var(--wall); background-position: 0 14px; }
+
+/* operator settings: keys for her brain, voice and face */
+.settings { margin-top: 28px; }
+.settings h2 { margin: 0 0 10px; font-size: 15px; font-weight: 700; }
+.settings h3 { margin: 18px 0 8px; font-size: 14px; font-weight: 700; }
+.set-status { margin: 0 0 12px; font-size: 13px; color: var(--glow); min-height: 1.5em; }
+.set-row { display: grid; grid-template-columns: 110px 1fr; gap: 10px; align-items: center; margin-bottom: 10px; font-size: 13px; color: var(--dusk); }
+.set-row input, .set-row select { width: 100%; min-width: 0; background: var(--wall); border: 1px solid var(--edge); border-radius: 10px; padding: 8px 10px; font-size: 14px; color: var(--paper); }
+.set-row input:focus, .set-row select:focus { border-color: var(--amber); outline: none; }
+.set-btns { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+.set-btns button { border: 0; border-radius: 10px; padding: 8px 16px; background: var(--glow); color: #17120a; font-weight: 800; }
+.set-note { margin: 10px 0 0; font-size: 12px; color: var(--dusk); min-height: 1.5em; }
+.set-note.bad { color: #ff8a7a; }
 .diary article p { margin: 0 0 .5em; }
 .empty { color: var(--dusk); }
 
@@ -157,12 +170,13 @@ body.offline .air i { background: #4a4855; box-shadow: none; animation: none; }
   .phone { width: min(100%, 64dvh * 9 / 16); height: auto; max-height: none; margin: 0 auto 44px; }
   .how { order: 5; margin: 0 18px 14px; }
   .go { order: 6; width: auto; margin: 0 18px; }
-  .square, .square-soon, .links { order: 7; margin-left: 18px; margin-right: 18px; }
+  .links { order: 7; margin-left: 18px; margin-right: 18px; }
   .talk { order: 8; padding: 22px 18px; }
   .chat { max-height: 50vh; }
   .facts { order: 9; margin: 0 18px; }
   .board { order: 9; margin: 20px 18px 0; }
   .diary { order: 10; display: block; margin: 24px 18px 10px; }
+  .settings { order: 11; margin: 24px 18px 10px; }
   .foot { height: auto; flex-direction: column; align-items: flex-start; padding: 12px 18px 18px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }

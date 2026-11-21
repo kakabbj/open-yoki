@@ -5,14 +5,16 @@
 //   AVATAR=mock|vidu  who draws her face (mock = her still picture + effects, for local work without Vidu)
 //   ON_AIR=on|off     override the host's schedule (on for local testing)
 //   MODE=show|test    show (default) runs the real schedule; test forces her on air and opens /api/test/* controls
-// Every key comes from the environment (see .env.example); nothing is read from key files here.
+// Keys come from the environment (see .env.example) or the settings panel's <data>/keys.json;
+// nothing else reads key files.
 import { createServer } from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { createWorld, MOODS, whoOf } from './world.mjs';
-import { createBrain, openrouter, deepseek, withBackup, diaryPrompt, fitLength, MODEL, takeInner } from './brain.mjs';
+import { createBrain, openrouter, deepseek, chatCompletions, anthropic, responsesApi, withBackup, diaryPrompt, fitLength, MODEL, takeInner } from './brain.mjs';
+import { createKeyStore } from './settings.mjs';
 import { createAvatar } from './avatar.mjs';
 import { createFiller } from './filler.mjs';
 import { createHeart, claudeRunner, fallbackRunner } from './heart.mjs';
@@ -114,9 +116,16 @@ export async function start(env = process.env) {
   const memes = createMemes({ dir: dataDir });
   const status = (r, ok, err) => { routes[r] = { ...routes[r], ok, at: Date.now(), err: ok ? undefined : err }; };
 
-  const orKey = env.OPENROUTER_API_KEY || null;
+  // API keys: the settings panel's <data>/keys.json first, env vars as fallback. The brain
+  // key applies live (ask resolves it per call); voice and face keys apply on restart.
+  const keyStore = createKeyStore({ file: path.join(dataDir, 'keys.json'), env, idolModel: idol.models?.main || null });
+  const vk = keyStore.voiceKeys();
+  if (vk.volcKey && !env.VOLC_API_KEY) env.VOLC_API_KEY = vk.volcKey;
+  if (vk.voiceId && !env.DOUBAO_VOICE_ID) env.DOUBAO_VOICE_ID = vk.voiceId;
+  if (vk.viduKey && !env.VIDU_KEY) env.VIDU_KEY = vk.viduKey;
+  const refreshModelRoute = () => { routes.model.on = !!keyStore.brain() && env.MODEL_OFF !== '1'; };
+  refreshModelRoute();
   const falKey = env.FAL_KEY || null;
-  routes.model.on = !!orKey && env.MODEL_OFF !== '1';
   // Voice: her Doubao voice when its key and voice id are there, else fal MiniMax as the fallback.
   const volcKey = env.VOLC_API_KEY || null;
   const dv = idol.avatar.doubao ? { ...idol.avatar.doubao, voiceId: env.DOUBAO_VOICE_ID || idol.avatar.doubao.voiceId } : null;
@@ -128,12 +137,32 @@ export async function start(env = process.env) {
     : falVoice({ key: falKey, dir: voiceDir, dailyChars, voiceId: idol.fallbackVoice.voiceId, speed: idol.fallbackVoice.speed, status });
   const voice = stageVoice;
   // With a DeepSeek key the mouth talks to DeepSeek directly (thinking off, MOUTH_DS model) and reads a page of facts
-  // (brain.mjs factFor, idol.mouth.direct); OpenRouter's main model backs it up. MOUTH_DIRECT=0 uses OpenRouter only.
-  const mouthDirect = !!env.HEART_KEY_DS && env.MOUTH_DIRECT !== '0' && !!idol.mouth?.direct;
-  const ask = !routes.model.on ? async () => { throw new Error('model off'); }
-    : mouthDirect ? withBackup(deepseek({ key: env.HEART_KEY_DS, model: env.MOUTH_DS || 'deepseek-flash' }), openrouter({ key: orKey, model: idol.models?.main || MODEL }), { mainMs: idol.models?.mainMs || 3500 })
-    : idol.models ? withBackup(openrouter({ key: orKey, model: idol.models.main }), openrouter({ key: orKey, model: idol.models.backup }), { mainMs: idol.models.mainMs })
-    : openrouter({ key: orKey });
+  // (brain.mjs factFor, idol.mouth.direct); the chosen provider backs it up. MOUTH_DIRECT=0 uses the chosen provider only.
+  const mouthDirect = !!keyStore.keyFor('deepseek') && env.MOUTH_DIRECT !== '0' && !!idol.mouth?.direct;
+  // The brain client for one resolved provider; the ask below resolves it per call so a
+  // key saved in the panel applies without a restart.
+  const clientFor = b => {
+    if (b.kind === 'anthropic') return anthropic({ key: b.key, model: b.model, base: b.base });
+    if (b.kind === 'responses') return responsesApi({ key: b.key, model: b.model, base: b.base });
+    if (b.provider === 'openrouter') return openrouter({ key: b.key, model: b.model });
+    if (b.provider === 'deepseek') return deepseek({ key: b.key, model: b.model });
+    return chatCompletions({ key: b.key, model: b.model, base: b.base });
+  };
+  const ask = async (messages, opts = {}) => {
+    if (!routes.model.on) throw new Error('model off');
+    const b = keyStore.brain();
+    if (!b) throw new Error('model off');
+    let run = clientFor(b);
+    // Backup: the idol's OpenRouter backup model when its key is saved and it is not the main provider.
+    const orKey = keyStore.keyFor('openrouter');
+    if (b.provider !== 'openrouter' && orKey && idol.models?.backup) {
+      run = withBackup(run, openrouter({ key: orKey, model: idol.models.backup }), { mainMs: idol.models?.mainMs || 3500 });
+    }
+    if (mouthDirect) {
+      run = withBackup(deepseek({ key: keyStore.keyFor('deepseek'), model: env.MOUTH_DS || 'deepseek-flash' }), run, { mainMs: idol.models?.mainMs || 3500 });
+    }
+    return run(messages, opts);
+  };
 
   let live = null;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -649,6 +678,34 @@ export async function start(env = process.env) {
         voice: voice ? { model: voice.provider === 'doubao' ? doubaoResource(voice.voiceId) : VOICE.model, charsToday: voice.used, capChars: voice.dailyChars, ...(voice.provider === 'doubao' ? { rmbToday: +voice.rmb.toFixed(3) } : { usdToday: +voice.usd.toFixed(3) }) } : null,
         modelSpend: { calls: brain.spend.calls, fails: brain.spend.fails, usd: +brain.spend.usd.toFixed(4) },
       }));
+      // The settings panel (the operator, not the room): keys are only ever sent back
+      // as "saved or not", never the values. Only from this machine, or with the
+      // ingest key like the ops scripts.
+      const fromOperator = () => {
+        const a = req.headers['x-real-ip'] || req.socket.remoteAddress;
+        return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1' || fromReader();
+      };
+      if (p === '/api/settings') {
+        if (!fromOperator()) return json(res, 403, { error: '没有权限' });
+        if (req.method === 'GET') return json(res, 200, { ...keyStore.status(), modelOn: routes.model.on });
+        if (req.method === 'POST') {
+          let st;
+          try { st = keyStore.save(await readBody(req, 32768)); } catch { return json(res, 400, { error: 'bad settings' }); }
+          refreshModelRoute();
+          return json(res, 200, { ...st, modelOn: routes.model.on });
+        }
+      }
+      if (p === '/api/settings/test' && req.method === 'POST') {
+        if (!fromOperator()) return json(res, 403, { error: '没有权限' });
+        const body = await readBody(req, 4096).catch(() => ({}));
+        const id = typeof body.provider === 'string' ? body.provider : keyStore.status().provider;
+        const b = keyStore.brainFor(id);
+        if (!b) return json(res, 200, { ok: false, error: 'no key' });
+        try {
+          const r = await clientFor(b)([{ role: 'user', content: 'Trả lời đúng một từ: ok' }], { signal: AbortSignal.timeout(15000) });
+          return json(res, 200, { ok: true, text: String(r.text || '').slice(0, 200) });
+        } catch (e) { return json(res, 200, { ok: false, error: String(e.message || e).slice(0, 160) }); }
+      }
       if (p === '/api/diary') {
         const d = world.w.diary.find(x => x.date === url.searchParams.get('date')) || world.w.diary[0];
         return json(res, 200, d || null);

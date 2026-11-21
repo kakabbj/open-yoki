@@ -3,11 +3,11 @@
 // snapshot arrives over /api/stream (feed.js). Nothing host-specific is written here: her name, picture and accounts
 // all come from snapshot.idol.
 import { watchRoom } from './feed.js';
-import { t, lang, setLang, setVars, applyStatic } from './i18n.js';
+import { t, lang, setLang, setVars, applyStatic, savedLang } from './i18n.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const hhmm = at => new Date(at).toLocaleTimeString(lang === 'en' ? 'en-GB' : 'zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+const hhmm = at => new Date(at).toLocaleTimeString(lang === 'vi' ? 'vi-VN' : lang === 'en' ? 'en-GB' : 'zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
 const S = 'livehost.';
 
 let room = null, shownLine = null, sound = false, diaryDate = null;
@@ -150,7 +150,6 @@ function showMove(name) {
 const ROUTE_NAMES = { model: '大脑', voice: '配音', avatar: '画面', chat: '公屏' };
 const ROUTE_STATE = { ok: '正常', down: '出错', off: '关闭' };
 // Her accounts: the config may give a full link or just a handle.
-const squareUrl = sq => !sq ? '' : typeof sq === 'string' ? (/^https:\/\//.test(sq) ? sq : '') : sq.url || (sq.handle ? `https://www.binance.com/square/profile/${encodeURIComponent(sq.handle)}` : '');
 const xUrl = x => { const h = String((typeof x === 'object' ? x?.handle : x) || '').replace(/^@/, ''); return /^\w{1,15}$/.test(h) ? `https://x.com/${h}` : ''; };
 const tgUrl = tg => { const u = typeof tg === 'string' ? tg : tg?.link || ''; return /^https:\/\/t\.me\//.test(u) ? u : ''; };
 let shownName = null;
@@ -171,9 +170,7 @@ function render(snap, prev) {
   $('regulars').textContent = snap.memo?.regulars ?? 0;
   const w = snap.schedule?.[0];
   if (w) $('showTime').textContent = t('每晚 {from}–{to}', { from: localClock(w.from, snap.tz), to: localClock(w.to, snap.tz) });
-  const sq = squareUrl(snap.idol.square), xu = xUrl(snap.idol.x), tu = tgUrl(snap.idol.tg);
-  $('squareBtn').hidden = !sq; $('squareSoon').hidden = !!sq;
-  if (sq) $('squareBtn').href = sq;
+  const xu = xUrl(snap.idol.x), tu = tgUrl(snap.idol.tg);
   $('xLink').hidden = !xu; if (xu) $('xLink').href = xu;
   $('tgLink').hidden = !tu; if (tu) $('tgLink').href = tu;
   $('links').hidden = !xu && !tu;
@@ -247,8 +244,14 @@ async function openDiary(date) {
 }
 $('diaryDates').onclick = e => { const b = e.target.closest('button[data-date]'); if (b) openDiary(b.dataset.date); };
 
+let langInit = false;
 watchRoom({
-  onRoom: snap => { const prev = room; room = snap; render(snap, prev); },
+  onRoom: snap => {
+    const prev = room; room = snap;
+    // No saved choice: open in the host's own language (Vy speaks Vietnamese).
+    if (!langInit) { langInit = true; if (!savedLang() && snap.idol?.lang === 'vi' && lang !== 'vi') { setLang('vi'); showLang(); } }
+    render(snap, prev);
+  },
   onOffline: off => { document.body.classList.toggle('offline', off); if (off) $('airText').textContent = t('连接断了，正在重连'); },
 });
 
@@ -308,13 +311,82 @@ function setSound(on) {
 }
 $('soundBtn').onclick = () => setSound(!sound);
 
-function showLang() { $('langBtn').textContent = lang === 'en' ? '中' : 'EN'; }
+function showLang() { $('langBtn').textContent = lang === 'en' ? 'VI' : lang === 'vi' ? '中' : 'EN'; }
 $('langBtn').onclick = () => {
-  setLang(lang === 'en' ? 'zh' : 'en');
+  setLang(lang === 'en' ? 'vi' : lang === 'vi' ? 'zh' : 'en');
   showLang();
   shownName = null;
   if (room) render(room, null);
   refreshMe();
+};
+
+// ---------- operator settings ----------
+let settingsCache = null;
+const setNote = (text, bad) => { $('setNote').textContent = text || ''; $('setNote').classList.toggle('bad', !!bad); };
+const providerOf = id => (settingsCache?.providers || []).find(p => p.id === id);
+function fillProvider() {
+  const id = $('setProvider').value, p = providerOf(id);
+  if (!p) return;
+  $('setModel').value = '';
+  $('setModel').placeholder = p.model || t('留空用默认模型');
+  $('setKey').value = '';
+  $('setKey').placeholder = p.configured ? t('已保存 key') : t('还没保存 key');
+  const active = providerOf(settingsCache.provider);
+  $('setStatus').textContent = settingsCache.modelOn && active ? `${t('正在用')} ${active.name} · ${active.model}` : t('还没接 key，模型是关的');
+}
+async function loadSettings() {
+  const r = await fetch('/api/settings', { cache: 'no-store' });
+  if (!r.ok) throw new Error(t('出错了（{status}）', { status: r.status }));
+  settingsCache = await r.json();
+  const sel = $('setProvider');
+  sel.innerHTML = settingsCache.providers.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  sel.value = settingsCache.provider;
+  $('setVolcKey').placeholder = settingsCache.voice?.volcConfigured ? t('已保存 key') : '';
+  $('setVoiceId').value = settingsCache.voice?.voiceId || '';
+  $('setViduKey').placeholder = settingsCache.voice?.viduConfigured ? t('已保存 key') : '';
+  fillProvider();
+}
+$('settingsBtn').onclick = async () => {
+  const panel = $('settingsPanel');
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) {
+    try { await loadSettings(); setNote(''); }
+    catch (err) { setNote(err.message, true); }
+  }
+};
+$('setClose').onclick = () => { $('settingsPanel').hidden = true; };
+$('setProvider').onchange = () => fillProvider();
+$('setSave').onclick = async () => {
+  const id = $('setProvider').value;
+  const body = { provider: id, models: {}, keys: {}, voice: {} };
+  if ($('setModel').value.trim()) body.models[id] = $('setModel').value.trim();
+  if ($('setKey').value) body.keys[id] = $('setKey').value;
+  if ($('setVolcKey').value) body.voice.volcKey = $('setVolcKey').value;
+  if ($('setVoiceId').value.trim()) body.voice.voiceId = $('setVoiceId').value.trim();
+  if ($('setViduKey').value) body.voice.viduKey = $('setViduKey').value;
+  setNote(t('正在保存…'));
+  try {
+    settingsCache = await post('/api/settings', body);
+    $('setKey').value = ''; $('setVolcKey').value = ''; $('setViduKey').value = '';
+    fillProvider();
+    setNote(t('已保存'));
+  } catch (err) { setNote(err.message, true); }
+};
+$('setTest').onclick = async () => {
+  setNote(t('正在检查…'));
+  try {
+    const r = await post('/api/settings/test', { provider: $('setProvider').value });
+    setNote(r.ok ? `${t('Key 跑起来了')}${r.text ? ` — ${r.text}` : ''}` : (r.error === 'no key' ? t('先保存 key') : r.error), !r.ok);
+  } catch (err) { setNote(err.message, true); }
+};
+$('setDel').onclick = async () => {
+  const id = $('setProvider').value;
+  setNote(t('正在保存…'));
+  try {
+    settingsCache = await post('/api/settings', { provider: id, keys: { [id]: '' } });
+    fillProvider();
+    setNote(t('已保存'));
+  } catch (err) { setNote(err.message, true); }
 };
 applyStatic();
 showLang();

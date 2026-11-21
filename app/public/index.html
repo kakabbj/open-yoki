@@ -23,6 +23,7 @@
         <h1 id="name"></h1>
         <p class="air" id="air"><i></i><span id="airText" data-i18n="现在没在播">Off air</span></p>
       </div>
+      <button class="lang" id="settingsBtn" type="button" data-i18n-aria-label="设置" aria-label="Settings">⚙</button>
       <button class="lang" id="langBtn" type="button" data-i18n-aria-label="切换语言" aria-label="Switch language">中</button>
     </header>
     <p class="lead" data-i18n="{name} 是陪你熬夜看盘的 AI 主播。">An AI host who stays up with you.</p>
@@ -33,8 +34,6 @@
       <li data-i18n="明天再来，她还记得你">Come back tomorrow. She'll remember you</li>
     </ol>
     <button class="go" id="goBtn" type="button" data-i18n="跟她打个招呼">Say hi to her</button>
-    <a class="square" id="squareBtn" hidden target="_blank" rel="noopener" data-i18n="去币安广场看她直播">Watch her on Binance Square</a>
-    <p class="square-soon" id="squareSoon" data-i18n="币安广场直播间马上开。">Her Binance Square room opens soon.</p>
     <!-- Her own accounts, shown only when the host config names them. -->
     <p class="links" id="links" hidden>
       <a id="xLink" hidden target="_blank" rel="noopener" data-i18n="她的 X">Her X</a>
@@ -59,6 +58,28 @@
       <h2 id="diaryTitle" data-i18n="她的日记">Her diary</h2>
       <div class="diary-dates" id="diaryDates"></div>
       <article id="diary"><p class="empty" data-i18n="每晚下播后她自己写一篇。">She writes one herself after every show.</p></article>
+    </section>
+
+    <!-- Operator settings: API keys for her brain, voice and face. The keys never leave
+         this machine's server; the page only ever sees "saved or not". -->
+    <section class="settings" id="settingsPanel" hidden aria-labelledby="settingsTitle">
+      <h2 id="settingsTitle" data-i18n="AI 设置">AI settings</h2>
+      <p class="set-status" id="setStatus"></p>
+      <label class="set-row"><span data-i18n="选 AI">Pick an AI</span><select id="setProvider"></select></label>
+      <label class="set-row"><span data-i18n="模型">Model</span><input id="setModel" autocomplete="off" data-i18n-placeholder="留空用默认模型" placeholder="Empty = default model"></label>
+      <label class="set-row"><span data-i18n="Key">Key</span><input id="setKey" type="password" autocomplete="off" data-i18n-placeholder="还没保存 key" placeholder="No key saved"></label>
+      <div class="set-btns">
+        <button type="button" id="setSave" data-i18n="保存">Save</button>
+        <button type="button" id="setTest" data-i18n="检查">Test</button>
+        <button type="button" id="setDel" class="link" data-i18n="删 key">Delete key</button>
+      </div>
+      <p class="set-note" id="setNote"></p>
+      <h3 data-i18n="语音和画面">Voice and face</h3>
+      <label class="set-row"><span>Volc Key</span><input id="setVolcKey" type="password" autocomplete="off"></label>
+      <label class="set-row"><span data-i18n="配音 ID（Doubao）">Voice ID (Doubao)</span><input id="setVoiceId" autocomplete="off"></label>
+      <label class="set-row"><span>Vidu Key</span><input id="setViduKey" type="password" autocomplete="off"></label>
+      <p class="set-note" data-i18n="语音和画面在重启服务器后生效">Voice and face apply after the server restarts</p>
+      <button type="button" id="setClose" class="link" data-i18n="关闭">Close</button>
     </section>
   </section>
 

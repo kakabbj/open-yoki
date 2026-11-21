@@ -362,6 +362,66 @@ export function deepseek({ key, model = 'deepseek-flash', temperature = 1.0, fet
   };
 }
 
+// One OpenAI-compatible /chat/completions client for every provider that speaks it
+// (Gemini's OpenAI endpoint, OpenAI itself, 9Router, a custom base). OpenRouter and
+// DeepSeek keep their own clients above (extra headers, cost estimate).
+export function chatCompletions({ key, model, base, fetchImpl = fetch }) {
+  const clean = s => String(s ?? '').split(key).join('***');
+  return async function ask(messages, { long = false, signal } = {}) {
+    let r;
+    try {
+      r = await fetchImpl(`${base.replace(/\/$/, '')}/chat/completions`, { method: 'POST', signal,
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages, temperature: 0.9, max_tokens: long ? 600 : 160 }) });
+    } catch (err) { throw new Error(`model: ${clean(err?.message || err)}`.slice(0, 160)); }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`model ${r.status}: ${clean(j.error?.message || j.message || '')}`.slice(0, 160));
+    return { text: j.choices?.[0]?.message?.content || '', cost: j.usage?.cost || 0 };
+  };
+}
+
+// Anthropic's own Messages API: system goes in its own field, the rest must alternate
+// user/assistant, so consecutive same-role lines are merged.
+export function anthropic({ key, model, base = 'https://api.anthropic.com', fetchImpl = fetch }) {
+  const clean = s => String(s ?? '').split(key).join('***');
+  return async function ask(messages, { long = false, signal } = {}) {
+    const sys = [], rest = [];
+    for (const m of messages) {
+      if (m.role === 'system' && !rest.length) { sys.push(m.content); continue; }
+      const last = rest.at(-1);
+      if (last && last.role === m.role) last.content += '\n' + m.content; else rest.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content });
+    }
+    let r;
+    try {
+      r = await fetchImpl(`${base.replace(/\/$/, '')}/v1/messages`, { method: 'POST', signal,
+        headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({ model, ...(sys.length ? { system: sys.join('\n\n') } : {}), messages: rest, temperature: 0.9, max_tokens: long ? 600 : 160 }) });
+    } catch (err) { throw new Error(`anthropic: ${clean(err?.message || err)}`.slice(0, 160)); }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`anthropic ${r.status}: ${clean(j.error?.message || '')}`.slice(0, 160));
+    return { text: (j.content || []).filter(c => c.type === 'text').map(c => c.text || '').join(''), cost: 0 };
+  };
+}
+
+// A /v1/responses client (Xingchi): input is the same message list, the answer is
+// output_text, or the text of the message outputs.
+export function responsesApi({ key, model, base = 'https://api.xingchiapi.com/v1', fetchImpl = fetch }) {
+  const clean = s => String(s ?? '').split(key).join('***');
+  return async function ask(messages, { long = false, signal } = {}) {
+    let r;
+    try {
+      r = await fetchImpl(`${base.replace(/\/$/, '')}/responses`, { method: 'POST', signal,
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, input: messages.map(m => ({ role: m.role, content: m.content })), temperature: 0.9, max_output_tokens: long ? 600 : 160 }) });
+    } catch (err) { throw new Error(`responses: ${clean(err?.message || err)}`.slice(0, 160)); }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`responses ${r.status}: ${clean(j.error?.message || j.message || '')}`.slice(0, 160));
+    const text = typeof j.output_text === 'string' ? j.output_text
+      : (j.output || []).filter(o => o.type === 'message').flatMap(o => o.content || []).filter(c => c.type === 'output_text' || c.type === 'text').map(c => c.text || '').join('');
+    return { text, cost: 0 };
+  };
+}
+
 // What happened, said as a fact, for the direct mouth. Kinds not listed keep promptFor's text, minus the
 // "N 字以内" (how long she talks is hers).
 export function factFor(idol, e, w) {

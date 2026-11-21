@@ -1,6 +1,6 @@
-// The page text in Chinese and English. Keys are the Chinese text with {slot}s; the HTML carries the English as its
-// default text. English is the default; a browser whose first language is Chinese opens in Chinese, and a choice made
-// with the switch is remembered. Her own spoken lines stay as she said them.
+// The page text in Chinese, English and Vietnamese. Keys are the Chinese text with {slot}s; the HTML carries the
+// English as its default text. English is the default; a browser whose first language is Chinese opens in Chinese,
+// Vietnamese in Vietnamese, and a choice made with the switch is remembered. Her own spoken lines stay as she said them.
 // Host-specific words (her name) are never written here: the page calls setVars({ name }) once /api/state arrives.
 const KEY = 'livehost.lang';
 const EN = {
@@ -16,8 +16,6 @@ const EN = {
   '跟她说句话，或者点她做个动作': 'Say something, or tap a move',
   '明天再来，她还记得你': "Come back tomorrow. She'll remember you",
   '跟她打个招呼': 'Say hi to her',
-  '去币安广场看她直播': 'Watch her on Binance Square',
-  '币安广场直播间马上开。': 'Her Binance Square room opens soon.',
   '她的 X': 'Her X',
   '她的 Telegram 群': 'Her Telegram group',
   '在看': 'Watching',
@@ -96,25 +94,149 @@ const EN = {
   '说点什么再发': 'Write something first', '一条最多 80 个字': '80 characters max', '发太快了，8 秒一条': 'Too fast: one line every 8 seconds', '发太快了，等一下': 'Too fast, wait a moment',
   '这台设备进来的游客太多了，过一会儿再来': 'Too many names from this device. Try again later.',
   '请求格式不对': 'Bad request', '服务器出错了': 'Server error',
+  // settings panel
+  '设置': 'Settings', 'AI 设置': 'AI settings', '正在用': 'Using',
+  '还没接 key，模型是关的': 'No key connected, the model is off',
+  '选 AI': 'Pick an AI', '模型': 'Model', '留空用默认模型': 'Empty = default model',
+  'Key': 'Key', '已保存 key': 'Key saved', '还没保存 key': 'No key saved',
+  '保存': 'Save', '检查': 'Test', '删 key': 'Delete key',
+  '正在保存…': 'Saving…', '正在检查…': 'Testing…', '已保存': 'Saved',
+  'Key 跑起来了': 'Key works', '先保存 key': 'Save a key first',
+  '语音和画面': 'Voice and face', '配音 ID（Doubao）': 'Voice ID (Doubao)',
+  '语音和画面在重启服务器后生效': 'Voice and face apply after the server restarts',
+  '关闭': 'Close', '没有权限': 'No permission',
+};
+// Vietnamese. The film host's own lines (lead, about, off-air note, footer) are worded for her:
+// YouTube / Facebook / TikTok and films, no Binance Square, no market calls.
+const VI = {
+  '{name} · 陪你熬夜的 AI 主播': '{name} · host AI thức khuya cùng bạn',
+  '{name} 是 AI 直播主播：读弹幕、记得常来的人、顺嘴聊行情，每晚在币安广场和这里直播。': '{name} là host AI live: đọc bình luận, nhớ khách quen, tám chuyện phim. Mỗi tối live trên YouTube, Facebook, TikTok và ở đây.',
+  '切换语言': 'Đổi ngôn ngữ',
+  '现在没在播': 'Đang off air',
+  '直播中': 'Đang live',
+  '连接断了，正在重连': 'Mất kết nối, đang kết nối lại',
+  '{name} 是陪你熬夜看盘的 AI 主播。': '{name} là host AI thức khuya cùng bạn.',
+  '她读弹幕、记得常来的人，顺嘴聊聊行情。每晚在币安广场和这里同时直播，两边的话她都回。': 'Cô ấy đọc bình luận, nhớ khách quen, tám đủ chuyện phim. Mỗi tối live trên YouTube, Facebook, TikTok và ở đây cùng lúc, bên nào cô ấy cũng trả lời.',
+  '起个昵称进来': 'Chọn một nickname',
+  '跟她说句话，或者点她做个动作': 'Nói gì đó với cô ấy, hoặc bấm cho cô ấy làm một động tác',
+  '明天再来，她还记得你': 'Mai quay lại nhé, cô ấy vẫn nhớ bạn',
+  '跟她打个招呼': 'Chào cô ấy đi',
+  '她的 X': 'X của cô ấy',
+  '她的 Telegram 群': 'Nhóm Telegram của cô ấy',
+  '在看': 'Đang xem',
+  '她记得的常客': 'Khách quen cô ấy nhớ',
+  '开播时间': 'Giờ live',
+  '她的日记': 'Nhật ký của cô ấy',
+  '每晚下播后她自己写一篇。': 'Mỗi tối hết live là cô ấy tự viết một bài.',
+  '直播画面': 'Hình ảnh live',
+  '画面接入中…': 'Đang kết nối hình ảnh…',
+  '她还没上线': 'Cô ấy chưa lên sóng',
+  '下次开播': 'Lần live tới',
+  '每晚 {from}–{to}（你的当地时间），币安广场和这里同时开。': 'Mỗi tối {from}–{to} giờ của bạn, cô ấy live ở đây.',
+  '开声音': 'Bật tiếng',
+  '关声音': 'Tắt tiếng',
+  '弹幕': 'Bình luận',
+  '她现在看的盘': 'Bảng cô ấy đang xem',
+  '她能查到币安上 {n} 个币：现货、合约和 Alpha。': 'Cô ấy tra được {n} đồng trên Binance: spot, futures và Alpha.',
+  '今晚她猜 <b>{coin}</b> 明天这时候{dir}，当时 {price}。': 'Tối nay cô ấy đoán <b>{coin}</b> {dir} vào giờ này ngày mai. Lúc đó giá {price}.',
+  '更高': 'tăng',
+  '更低': 'giảm',
+  '上一次猜 {coin}：{from} 到 {to}，她{verdict}。': 'Lần đoán trước với {coin}: từ {from} lên {to}, cô ấy {verdict}.',
+  '说对了': 'đoán đúng',
+  '说错了': 'đoán sai',
+  '看盘记录 {right}/{total}': 'Kỷ lục đoán giá {right}/{total}',
+  '每晚开播她会猜一次行情，第二天自动对答案。不是投资建议。': 'Mỗi tối live cô ấy đoán giá một lần, hôm sau tự đối chiếu. Không phải lời khuyên đầu tư.',
+  '起个昵称，她会这样叫你': 'Chọn nickname, cô ấy sẽ gọi bạn như vậy',
+  '比如：熬夜的老王': 'VD: cú đêm',
+  '进来': 'Vào',
+  '换个昵称': 'Đổi nickname',
+  '点她做个动作': 'Bấm cho cô ấy làm động tác',
+  '跟她说点什么': 'Nói gì đó với cô ấy',
+  '发送': 'Gửi',
+  '{name} 是 AI，她说的不是投资建议。': '{name} là AI, những gì cô ấy nói chỉ để giải trí.',
+  // live text
+  '每晚 {from}–{to}': 'Mỗi tối {from}–{to}',
+  '网页': 'Web',
+  '回复 <b>{who}</b>：{text}': 'Trả lời <b>{who}</b>: {text}',
+  '刷到{src} <b>{who}</b>：{text}': 'Thấy trên {src} <b>{who}</b>: {text}',
+  '刷到{src}：{text}': 'Thấy trên {src}: {text}',
+  '广场': 'Binance Square',
+  '推特': 'X',
+  '快讯': 'tin nhanh',
+  '热搜': 'hot search',
+  '币安在推': 'Binance đang đẩy',
+  '她回了': 'cô ấy đã trả lời',
+  '还没人说话，第一句留给你。': 'Chưa ai nói gì, câu đầu tiên dành cho bạn.',
+  '点了「{a}」': 'đã bấm: {a}',
+  '你是 {name}。说话进弹幕，她挑着回。': 'Bạn là {name}. Nhắn lên bình luận, cô ấy sẽ chọn để trả lời.',
+  '收到，她做完手上这句就来。': 'Nhận rồi, cô ấy nói xong câu này sẽ làm ngay.',
+  '发出去了，她看到了。': 'Gửi rồi, cô ấy đã thấy.',
+  '先起个昵称': 'Chọn nickname trước đã',
+  '{m}月{d}日': 'ngày {d} tháng {m}',
+  '出错了（{status}）': 'Có lỗi ({status})',
+  '大脑': 'Não', '配音': 'Giọng', '画面': 'Hình ảnh', '公屏': 'Chat', '正常': 'OK', '出错': 'lỗi', '关闭': 'tắt',
+  // moves (the host config may add more; a move without a Vietnamese name shows as written)
+  '挥手': 'Vẫy tay', '比心': 'Thả tim', '眨眼': 'Nháy mắt', '捂脸': 'Che mặt', '飞吻': 'Hôn gió', '撒娇': 'Nũng nịu',
+  '点头': 'Gật đầu', '歪头': 'Nghiêng đầu', '看手机': 'Xem điện thoại', '看屏幕': 'Nhìn màn hình', '指屏幕': 'Chỉ màn hình',
+  '后仰笑': 'Cười ngửa ra', '托腮': 'Chống cằm', '撩头发': 'Hất tóc', '摊手': 'Xòe tay', '摇头': 'Lắc đầu',
+  '伸懒腰': 'Vươn vai', '扶帽子': 'Chỉnh mũ', '捧脸笑': 'Ôm mặt cười', '惊讶': 'Ngạc nhiên', '叹气': 'Thở dài', '撇嘴': 'Bĩu môi',
+  '得意笑': 'Cười đắc ý', '发呆': 'Ngẩn ngơ', '抿嘴笑': 'Mím môi cười', '眯眼笑': 'Nheo mắt cười', '憋笑': 'Nhịn cười',
+  '低头笑': 'Cúi đầu cười', '眼睛一亮': 'Mắt sáng lên', '挑眉': 'Nhướng mày', '愣一下': 'Sững lại', '往上看想': 'Nhìn lên suy nghĩ',
+  '眯眼琢磨': 'Nheo mắt ngẫm', '斜眼瞄': 'Liếc xéo', '小白眼': 'Lườm', '嘴角一撇': 'Nhếch mép', '坏笑': 'Cười ranh mãnh',
+  '眼神变软': 'Ánh mắt dịu lại', '抿嘴点头': 'Mím môi gật đầu', '皱眉': 'Cau mày', '瞪一眼': 'Trừng mắt', '不好意思笑': 'Cười ngượng',
+  '认真听': 'Lắng nghe', '瞄弹幕笑': 'Đọc bình luận, cười', '轻轻叹': 'Thở dài khẽ', '鼓腮': 'Phồng má', '摸下巴': 'Sờ cằm',
+  '双手合十': 'Chắp tay', '握拳加油': 'Nắm tay cổ vũ', '拍手': 'Vỗ tay', '竖大拇指': 'Giơ ngón cái', '嘘': 'Suỵt',
+  '凑近镜头': 'Ghé sát camera', '扶额': 'Ôm trán', '捂心口': 'Ôm ngực', '托腮笑': 'Chống cằm cười', '抱胸': 'Khoanh tay',
+  '捂嘴笑': 'Che miệng cười', '打哈欠': 'Ngáp', '喝水': 'Uống nước',
+  // moods
+  '平静': 'Bình tĩnh', '开心': 'Vui', '兴奋': 'Phấn khích', '失落': 'Buồn', '暴躁': 'Cáu',
+  '手势舞': 'Múa tay', '剪刀手': 'Chữ V', '转椅子': 'Xoay ghế', '站着挥手': 'Đứng vẫy tay', '站着转圈': 'Đứng xoay vòng', '站着跳舞': 'Đứng nhảy', '踏步拍手': 'Dậm chân vỗ tay', '站着比心': 'Đứng thả tim', '鞠躬': 'Cúi chào',
+  // server errors
+  '换个昵称：1 到 12 个字，不能带链接或“官方”“客服”': 'Đổi nickname khác: 1 đến 12 ký tự, không link, không chữ “chính thức” hay “chăm sóc khách hàng”',
+  '没有登录': 'Chưa đăng nhập', '先进直播间': 'Chọn nickname trước đã', '先起个昵称进来': 'Chọn nickname trước đã',
+  '没有这个动作': 'Cô ấy không biết động tác này', '她现在没在直播': 'Cô ấy đang không live',
+  '点太快了，等她做完这个': 'Bấm nhanh quá, để cô ấy làm xong cái này đã', '点播排满了，过一会儿再点': 'Yêu cầu đang đầy, lát nữa bấm lại nhé',
+  '说点什么再发': 'Viết gì đó rồi hãy gửi', '一条最多 80 个字': 'Tối đa 80 ký tự một dòng', '发太快了，8 秒一条': 'Gửi nhanh quá, 8 giây một dòng thôi', '发太快了，等一下': 'Gửi nhanh quá, đợi một chút',
+  '这台设备进来的游客太多了，过一会儿再来': 'Thiết bị này vào nhiều quá rồi, lát nữa quay lại nhé',
+  '请求格式不对': 'Yêu cầu sai định dạng', '服务器出错了': 'Server bị lỗi',
+  // settings panel
+  '设置': 'Cài đặt', 'AI 设置': 'Cài đặt AI', '正在用': 'Đang dùng',
+  '还没接 key，模型是关的': 'Chưa gắn key, não đang tắt',
+  '选 AI': 'Chọn AI', '模型': 'Model', '留空用默认模型': 'Để trống = model mặc định',
+  'Key': 'Key', '已保存 key': 'Đã lưu key', '还没保存 key': 'Chưa lưu key',
+  '保存': 'Lưu', '检查': 'Kiểm tra', '删 key': 'Xóa key',
+  '正在保存…': 'Đang lưu…', '正在检查…': 'Đang kiểm tra…', '已保存': 'Đã lưu',
+  'Key 跑起来了': 'Key chạy được', '先保存 key': 'Lưu key trước đã',
+  '语音和画面': 'Giọng nói và khuôn mặt', '配音 ID（Doubao）': 'ID giọng (Doubao)',
+  '语音和画面在重启服务器后生效': 'Giọng nói và khuôn mặt áp dụng khi khởi động lại server',
+  '关闭': 'Đóng', '没有权限': 'Không có quyền',
 };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// A saved choice wins; otherwise Chinese only for a Chinese browser, English for everything else.
+// A saved choice wins; otherwise Chinese for a Chinese browser, Vietnamese for a
+// Vietnamese browser, English for everything else.
 function pick() {
-  try { const v = localStorage.getItem(KEY); if (v === 'zh' || v === 'en') return v; } catch {}
+  try { const v = localStorage.getItem(KEY); if (v === 'zh' || v === 'en' || v === 'vi') return v; } catch {}
   const langs = (typeof navigator !== 'undefined' && (navigator.languages?.length ? navigator.languages : [navigator.language])) || [];
-  return String(langs[0] || '').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  const first = String(langs[0] || '').toLowerCase();
+  return first.startsWith('zh') ? 'zh' : first.startsWith('vi') ? 'vi' : 'en';
 }
 export let lang = pick();
 export const dict = EN;
+export const dictVi = VI;
 let vars0 = {};
 
 // Page-wide slots ({name}); a call's own vars win.
 export function setVars(v) { vars0 = { ...vars0, ...v }; }
 
+// The saved choice, if any, so the room can fall back to the host's own language.
+export function savedLang() {
+  try { const v = localStorage.getItem(KEY); return v === 'zh' || v === 'en' || v === 'vi' ? v : null; } catch { return null; }
+}
+
 export function t(zh, vars = {}) {
   vars = { ...vars0, ...vars };
-  let s = lang === 'en' ? (EN[zh] ?? zh) : zh;
+  let s = lang === 'en' ? (EN[zh] ?? zh) : lang === 'vi' ? (VI[zh] ?? EN[zh] ?? zh) : zh;
   if (lang === 'en' && 'm' in vars) vars = { ...vars, mon: MONTHS[Number(vars.m) - 1] };
   return s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
 }
@@ -123,7 +245,7 @@ export function t(zh, vars = {}) {
 const ready = key => [...key.matchAll(/\{(\w+)\}/g)].every(m => vars0[m[1]] != null && vars0[m[1]] !== '');
 
 export function applyStatic(root = document) {
-  document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+  document.documentElement.lang = lang === 'vi' ? 'vi' : lang === 'en' ? 'en' : 'zh-CN';
   for (const el of root.querySelectorAll('[data-i18n]')) if (ready(el.dataset.i18n)) el.textContent = t(el.dataset.i18n);
   for (const el of root.querySelectorAll('*')) {
     for (const a of el.getAttributeNames()) if (a.startsWith('data-i18n-') && ready(el.getAttribute(a))) el.setAttribute(a.slice(10), t(el.getAttribute(a)));

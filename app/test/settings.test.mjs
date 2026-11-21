@@ -1,0 +1,165 @@
+// The settings panel's key store, the new brain clients (chat / Anthropic / Responses),
+// and the settings endpoints end to end on a real server with a stub provider.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import { createKeyStore, PROVIDERS } from '../server/settings.mjs';
+import { chatCompletions, anthropic, responsesApi } from '../server/brain.mjs';
+
+const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'livehost-settings-'));
+const stubFetch = (handler) => async (url, opts) => {
+  const got = handler(url, opts);
+  return { ok: got.ok ?? true, status: got.status ?? 200, json: async () => got.json ?? {} };
+};
+
+test('key store: save/load round-trip, keys never leak into the public status', () => {
+  const dir = tmp(), file = path.join(dir, 'keys.json');
+  const store = createKeyStore({ file, env: {}, idolModel: 'deepseek/deepseek-v4.1-flash' });
+  assert.equal(store.status().provider, 'openrouter');
+  assert.equal(store.brain(), null);
+  const st = store.save({ keys: { openrouter: 'sk-or-123' } });
+  assert.equal(st.providers.find(p => p.id === 'openrouter').configured, true);
+  assert.equal(JSON.stringify(st).includes('sk-or-123'), false);
+  assert.equal(store.brain().model, 'deepseek/deepseek-v4.1-flash');
+  assert.equal(store.brain().key, 'sk-or-123');
+  // the file itself is locked down, and a second store reads the same keys back
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  assert.equal(createKeyStore({ file, env: {} }).brain().key, 'sk-or-123');
+  // saving one provider keeps the others; '' clears a saved key
+  store.save({ provider: 'gemini', keys: { gemini: 'sk-gem-1' } });
+  assert.equal(store.brain().provider, 'gemini');
+  assert.equal(store.keyFor('openrouter'), 'sk-or-123');
+  store.save({ keys: { gemini: '' } });
+  assert.equal(store.keyFor('gemini'), null);
+  assert.equal(store.brain(), null);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('key store: env is the fallback, a saved key wins; bad input is refused', () => {
+  const dir = tmp(), file = path.join(dir, 'keys.json');
+  const store = createKeyStore({ file, env: { OPENROUTER_API_KEY: 'sk-env' } });
+  assert.equal(store.brain().key, 'sk-env');
+  store.save({ keys: { openrouter: 'sk-saved' } });
+  assert.equal(store.brain().key, 'sk-saved');
+  assert.throws(() => store.save({ provider: 'nope' }), /unknown provider/);
+  assert.throws(() => store.save({ keys: { openrouter: 'x'.repeat(501) } }), /bad settings/);
+  assert.throws(() => store.save({ bases: { custom: 'ftp://x' } }), /bad base url/);
+  assert.throws(() => store.save({ voice: { voiceId: 'x'.repeat(101) } }), /bad settings/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('key store: voice keys come from settings first, env second', () => {
+  const dir = tmp(), file = path.join(dir, 'keys.json');
+  const store = createKeyStore({ file, env: { VOLC_API_KEY: 'volc-env', DOUBAO_VOICE_ID: 'S_1' } });
+  assert.equal(store.voiceKeys().volcKey, 'volc-env');
+  assert.equal(store.voiceKeys().voiceId, 'S_1');
+  assert.equal(store.voiceKeys().viduKey, null);
+  store.save({ voice: { volcKey: 'volc-saved', viduKey: 'vidu-saved' } });
+  assert.equal(store.voiceKeys().volcKey, 'volc-saved');
+  assert.equal(store.voiceKeys().viduKey, 'vidu-saved');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('chat completions client: request shape, answer and cost', async () => {
+  let seen;
+  const ask = chatCompletions({ key: 'k1', model: 'gpt-4o-mini', base: 'https://api.example.com/v1', fetchImpl: stubFetch((url, opts) => {
+    seen = { url, opts, body: JSON.parse(opts.body) };
+    return { json: { choices: [{ message: { content: 'xin chào' } }], usage: { cost: 0.02 } } };
+  }) });
+  const r = await ask([{ role: 'user', content: 'hi' }]);
+  assert.equal(seen.url, 'https://api.example.com/v1/chat/completions');
+  assert.equal(seen.opts.headers.Authorization, 'Bearer k1');
+  assert.equal(seen.body.model, 'gpt-4o-mini');
+  assert.deepEqual(seen.body.messages, [{ role: 'user', content: 'hi' }]);
+  assert.deepEqual(r, { text: 'xin chào', cost: 0.02 });
+});
+
+test('brain clients never put the key in an error message', async () => {
+  const bad = stubFetch(() => ({ ok: false, status: 401, json: { error: { message: 'bad key sk-secret-123' } } }));
+  for (const ask of [
+    chatCompletions({ key: 'sk-secret-123', model: 'm', base: 'https://x', fetchImpl: bad }),
+    anthropic({ key: 'sk-secret-123', model: 'm', fetchImpl: bad }),
+    responsesApi({ key: 'sk-secret-123', model: 'm', fetchImpl: bad }),
+  ]) {
+    await assert.rejects(() => ask([{ role: 'user', content: 'hi' }]), err => !String(err.message).includes('sk-secret-123'));
+  }
+});
+
+test('anthropic client: system goes in its own field, same-role lines merge', async () => {
+  let seen;
+  const ask = anthropic({ key: 'k2', model: 'claude-sonnet-4-5', fetchImpl: stubFetch((url, opts) => {
+    seen = { url, opts, body: JSON.parse(opts.body) };
+    return { json: { content: [{ type: 'text', text: 'chào bạn' }] } };
+  }) });
+  const r = await ask([{ role: 'system', content: 'You are Vy.' }, { role: 'user', content: 'hi' }, { role: 'user', content: 'there' }]);
+  assert.equal(seen.url, 'https://api.anthropic.com/v1/messages');
+  assert.equal(seen.opts.headers['x-api-key'], 'k2');
+  assert.equal(seen.body.system, 'You are Vy.');
+  assert.deepEqual(seen.body.messages, [{ role: 'user', content: 'hi\nthere' }]);
+  assert.equal(r.text, 'chào bạn');
+});
+
+test('responses client: input mapping and both answer shapes', async () => {
+  const one = responsesApi({ key: 'k3', model: 'gpt-6.1-sol', base: 'https://api.xingchiapi.com/v1', fetchImpl: stubFetch((url, opts) => {
+    assert.equal(url, 'https://api.xingchiapi.com/v1/responses');
+    const body = JSON.parse(opts.body);
+    assert.deepEqual(body.input, [{ role: 'user', content: 'hi' }]);
+    return { json: { output_text: 'chào' } };
+  }) });
+  assert.equal((await one([{ role: 'user', content: 'hi' }])).text, 'chào');
+  const two = responsesApi({ key: 'k3', model: 'm', fetchImpl: stubFetch(() => ({ json: { output: [{ type: 'message', content: [{ type: 'output_text', text: 'chào ' }, { type: 'output_text', text: 'bạn' }] }] } })) });
+  assert.equal((await two([{ role: 'user', content: 'hi' }])).text, 'chào bạn');
+});
+
+test('settings endpoints: save a key in the panel, the brain turns on, test hits the provider', async t => {
+  const { start } = await import('../server/index.mjs');
+  const dir = tmp();
+  // a stub provider that speaks OpenAI chat completions
+  const stub = http.createServer((req, res) => {
+    let s = '';
+    req.on('data', c => { s += c; });
+    req.on('end', () => {
+      const body = JSON.parse(s || '{}');
+      assert.equal(req.url, '/chat/completions');
+      assert.equal(req.headers.authorization, 'Bearer test-key');
+      assert.equal(body.model, 'test-model');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }));
+    });
+  });
+  await new Promise(r => stub.listen(0, '127.0.0.1', r));
+  const stubPort = stub.address().port;
+  const app = await start({ IDOL: 'viet', MODE: 'test', DATA_DIR: dir, AVATAR: 'mock' });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const port = app.server.address().port;
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    let r = await fetch(`${base}/api/settings`);
+    assert.equal(r.status, 200);
+    let j = await r.json();
+    assert.equal(j.modelOn, false);
+    assert.equal(j.providers.find(p => p.id === 'custom').configured, false);
+    r = await fetch(`${base}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'custom', keys: { custom: 'test-key' }, bases: { custom: `http://127.0.0.1:${stubPort}` }, models: { custom: 'test-model' } }) });
+    assert.equal(r.status, 200);
+    j = await r.json();
+    assert.equal(j.modelOn, true);
+    assert.equal(JSON.stringify(j).includes('test-key'), false);
+    assert.equal(j.providers.find(p => p.id === 'custom').configured, true);
+    r = await fetch(`${base}/api/state`);
+    j = await r.json();
+    assert.equal(j.routes.model, 'ok');
+    r = await fetch(`${base}/api/settings/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'custom' }) });
+    j = await r.json();
+    assert.deepEqual(j, { ok: true, text: 'ok' });
+    // the saved key survived on disk, in keys.json
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'keys.json'), 'utf8')).keys.custom, 'test-key');
+  } finally {
+    await app.shutdown();
+    stub.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

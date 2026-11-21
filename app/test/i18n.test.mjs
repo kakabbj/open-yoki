@@ -7,7 +7,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 
 Object.defineProperty(globalThis, 'navigator', { value: { languages: ['en'] }, configurable: true });
 globalThis.localStorage = { getItem: () => 'en', setItem() {} };
-const { dict, t, setVars } = await import('../public/i18n.js');
+const { dict, dictVi, t, setLang, setVars } = await import('../public/i18n.js');
 const { MOODS } = await import('../server/world.mjs');
 const idol = (await import('../idols/example/config.mjs')).default;
 const url = f => new URL(f, import.meta.url);
@@ -47,6 +47,25 @@ test('placeholders are filled in English, and {name} comes from the server', () 
   setVars({ name: 'Nova' });
   assert.equal(t('{name} 是 AI，她说的不是投资建议。'), 'Nova is an AI. Nothing she says is financial advice.');
   assert.match(t('{name} 是陪你熬夜看盘的 AI 主播。'), /^Nova /);
+});
+
+test('every English UI string has a Vietnamese version, with no Chinese inside it', () => {
+  const missing = Object.keys(dict).filter(k => !(k in dictVi));
+  assert.deepEqual(missing, []);
+  for (const [k, v] of Object.entries(dictVi)) assert.ok(!han.test(v), `Vietnamese still has Chinese: ${k}`);
+});
+
+test('Vietnamese translations come back when the language is Vietnamese', () => {
+  // setLang repaints the page; in node the document is just enough of a stub for it.
+  globalThis.document = { documentElement: {}, querySelectorAll: () => [] };
+  setLang('vi');
+  assert.equal(t('发送'), 'Gửi');
+  assert.equal(t('{m}月{d}日', { m: 10, d: 2 }), 'ngày 2 tháng 10');
+  assert.equal(t('大脑'), 'Não');
+  assert.equal(t('AI 设置'), 'Cài đặt AI');
+  assert.equal(t('还没接 key，模型是关的'), 'Chưa gắn key, não đang tắt');
+  setLang('en');
+  assert.equal(t('发送'), 'Send');
 });
 
 test('the page hard-codes no host: no name, handle, domain or picture of her', () => {
