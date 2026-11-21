@@ -1,5 +1,22 @@
-HUONG DAN - OPEN LIVESTREAM v7.5
+HUONG DAN - OPEN LIVESTREAM v7.6
 ==============================
+
+v7.6 GIONG NOI MIEN PHI, KHONG CAN KEY (giong T Review dung):
+truoc day host chi co tieng khi ban nhap key Volc + Voice ID (Doubao)
+nen khong key thi chi co phu de. Ban nay mac dinh dung Edge TTS —
+cung dich vu giong doc mien phi ma T Review dung de long tieng
+(giong Hoai My, nu, tieng Viet), khong can key, khong ton tien.
+Mo phong live la Vy vua noi vua co tieng luon.
+- Doi giong: bam banh rang (Cai dat) -> muc "Voice and face" ->
+  dong "Voice" chon Edge / Doubao / fal, dong "Edge voice" chon
+  Hoai My (nu) hoac Nam Minh (nam). Bam Luu, KHOI DONG LAI server
+  (tat cua so Chay-Live roi chay lai) moi doi giong.
+- Muon giong clone cua rieng ban thi chon Doubao, nhap Volc Key +
+  Voice ID nhu truoc; neu chon Doubao ma chua nhap key thi tu dong
+  ve Edge chu khong im lang.
+- Edge can mang toi Microsoft (speech.platform.bing.com) — tren may
+  Windows cua ban chay nhu T Review; chi co phu de tieng Viet, cau
+  tieng Trung xen vao co the doc khong chuan.
 
 v7.5 SUA DUT LOI 405 KHI KIEM TRA OPENCODE — NGUYEN NHAN DA RO:
 ban dung OpenCode v2.3.2, con cau noi cu chi biet API cua ban 1.
@@ -94,9 +111,11 @@ may ban, trinh duyet khong bao gio thay gia tri key.
   kiem tra mang hoac doi nha khac. Ten model Gemini mac dinh la
   gemini-2.5-flash; neu ban go model khac thi phai dung ten that
   cua Google (sai ten thuong bao loi nhanh, khong phai timeout).
-- Key giong (Volc/Doubao) + mat (Vidu) o muc "Voice and face":
-  luu xong KHOI DONG LAI server moi co tac dung.
-- Ban mock (khong key): host noi bang cau co san tieng Viet.
+- Giong noi o muc "Voice and face": mac dinh la Edge (mien phi,
+  khong can key, giong Hoai My). Muon giong clone thi chon Doubao,
+  nhap Volc Key + Voice ID; mat (Vidu) nhap Vidu Key. Luu xong
+  KHOI DONG LAI server moi co tac dung.
+- Ban mock (khong key nao): host van noi bang giong Edge mien phi.
   Dong log "model failed: model off" la binh thuong khi chua co key.
 
 5. HAT / DO VUI / KE CHUYEN / BAN HANG

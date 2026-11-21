@@ -384,6 +384,11 @@ async function loadSettings() {
   $('setVoiceId').value = settingsCache.voice?.voiceId || '';
   $('setViduKey').placeholder = settingsCache.voice?.viduConfigured ? t('已保存 key') : '';
   $('setLiveMode').value = settingsCache.liveMode || 'all';
+  const vv = settingsCache.voice || {};
+  $('setVoiceEngine').value = vv.engine || 'edge';
+  $('setEdgeVoice').innerHTML = (vv.edgeVoices || []).map(v => `<option value="${esc(v.id)}">${esc(v.name)}</option>`).join('');
+  $('setEdgeVoice').value = vv.edgeVoice || $('setEdgeVoice').options[0]?.value || '';
+  fillVoiceEngine();
   fillProvider();
 }
 $('settingsBtn').onclick = async () => {
@@ -399,11 +404,22 @@ $('settingsBtn').onclick = async () => {
 };
 $('setClose').onclick = () => { $('settingsPanel').hidden = true; };
 $('setProvider').onchange = () => fillProvider();
+// Voice engine (v7.6): Edge needs no key, so its voice row is the only one shown by
+// default; Doubao shows the Volc key + voice id rows instead.
+function fillVoiceEngine() {
+  const eng = $('setVoiceEngine').value;
+  $('setEdgeVoiceRow').hidden = eng !== 'edge';
+  $('setVolcKeyRow').hidden = eng !== 'doubao';
+  $('setVoiceIdRow').hidden = eng !== 'doubao';
+}
+$('setVoiceEngine').onchange = () => fillVoiceEngine();
 $('setSave').onclick = async () => {
   const id = $('setProvider').value;
   const body = { provider: id, models: {}, keys: {}, voice: {}, liveMode: $('setLiveMode').value };
   if ($('setModel').value.trim()) body.models[id] = $('setModel').value.trim();
   if ($('setKey').value) body.keys[id] = $('setKey').value;
+  body.voice.engine = $('setVoiceEngine').value;
+  if ($('setEdgeVoice').value) body.voice.edgeVoice = $('setEdgeVoice').value;
   if ($('setVolcKey').value) body.voice.volcKey = $('setVolcKey').value;
   if ($('setVoiceId').value.trim()) body.voice.voiceId = $('setVoiceId').value.trim();
   if ($('setViduKey').value) body.voice.viduKey = $('setViduKey').value;

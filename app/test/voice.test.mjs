@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { falVoice, doubaoVoice, spokenLang } from '../server/voice.mjs';
+import http from 'node:http';
+import { falVoice, doubaoVoice, edgeVoice, edgeVoiceId, spokenLang } from '../server/voice.mjs';
+import { WebSocketServer } from 'ws';
 
 test('a failed voice request is retried once with the picked voice and full quality', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-voice-'));
@@ -84,4 +86,124 @@ test('spokenLang names the language of a non-Chinese line', () => {
     ["Un robot, moi ? J'ai regardé", 'fr'], ['Coucou Julie, français oui ! Et merci, toi aussi', 'fr'], ['Ein Roboter, ich? Ich habe', 'de'], ['Bitcoin turun lagi ya', 'id'],
     ['Robot? Me? I have been staring at this chart all night', ''], ['The market is red tonight, la la la', ''], ['BTC 81k', ''], ['hahaha', '']];
   for (const [t, want] of cases) assert.equal(spokenLang(t), want, t);
+});
+
+// Edge TTS (v7.6): the free voice, no key. A fake read-aloud server answers the SSML
+// with one audio frame and turn.end; the line lands as an mp3 under /audio/.
+function fakeEdge({ onSsml }) {
+  const wss = new WebSocketServer({ port: 0 });
+  const received = [];
+  wss.on('connection', ws => ws.on('message', data => {
+    const s = data.toString();
+    received.push(s);
+    if (s.includes('Path: ssml')) onSsml(ws, s);
+  }));
+  return { wss, received, url: () => `ws://127.0.0.1:${wss.address().port}`, close: () => new Promise(r => wss.close(r)) };
+}
+const edgeAudio = (id, bytes) => Buffer.concat([Buffer.from(`X-RequestId:${id}\r\nContent-Type: audio/mpeg\r\nPath:audio\r\n\r\n`), Buffer.alloc(bytes, 7)]);
+const edgeEnd = id => `X-RequestId:${id}\r\nPath:turn.end\r\n\r\n`;
+const edgeId = s => /X-RequestId:(\S+)/.exec(s)?.[1] || 'x';
+
+test('Edge TTS: SSML with the picked voice comes back as an mp3 under /audio/', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-edge-'));
+  const fake = fakeEdge({ onSsml: (ws, s) => { const id = edgeId(s); ws.send(`X-RequestId:${id}\r\nPath:turn.start\r\n\r\n`); ws.send(edgeAudio(id, 6000)); ws.send(edgeEnd(id)); } });
+  try {
+    const v = edgeVoice({ dir, voiceId: 'vi-VN-NamMinhNeural', wsUrl: fake.url() });
+    const out = await v.say('Xin chào & <bạn>', 'smile', 'e1');
+    assert.equal(out.url, '/audio/e1.mp3');
+    assert.equal(out.durationMs, 1000);   // 6000 bytes at 48 kbps
+    assert.equal(fs.readFileSync(path.join(dir, 'e1.mp3')).length, 6000);
+    assert.equal(v.provider, 'edge');
+    const ssml = fake.received.find(s => s.includes('Path: ssml'));
+    assert.match(ssml, /vi-VN-NamMinhNeural/);
+    assert.match(ssml, /Xin chào &amp; &lt;bạn&gt;/);
+    assert.match(fake.received.find(s => s.includes('speech.config')), /audio-24khz-48kbitrate-mono-mp3/);
+  } finally { await fake.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Edge TTS: a connection that dies mid-turn is retried once', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-edge-'));
+  let n = 0;
+  const fake = fakeEdge({ onSsml: (ws, s) => { if (++n === 1) { ws.close(); return; } const id = edgeId(s); ws.send(edgeAudio(id, 3000)); ws.send(edgeEnd(id)); } });
+  try {
+    const v = edgeVoice({ dir, wsUrl: fake.url() });
+    const out = await v.say('alo', 'smile', 'e2');
+    assert.equal(out.url, '/audio/e2.mp3');
+    assert.equal(out.durationMs, 500);
+    assert.equal(n, 2);
+  } finally { await fake.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Edge TTS: two dead connections fail cleanly with no file', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-edge-'));
+  const fake = fakeEdge({ onSsml: ws => ws.close() });
+  try {
+    const notes = [];
+    const v = edgeVoice({ dir, wsUrl: fake.url(), status: (r, ok) => notes.push(ok) });
+    assert.equal(await v.say('alo', 'smile', 'e3'), null);
+    assert.deepEqual(notes, [false]);
+    assert.equal(fs.existsSync(path.join(dir, 'e3.mp3')), false);
+  } finally { await fake.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Edge TTS: pcm decodes the mp3 through the injected decoder', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-edge-'));
+  const fake = fakeEdge({ onSsml: (ws, s) => { const id = edgeId(s); ws.send(edgeAudio(id, 6000)); ws.send(edgeEnd(id)); } });
+  try {
+    const v = edgeVoice({ dir, wsUrl: fake.url(), execImpl: async buf => { assert.equal(buf.length, 6000); return Buffer.from([1, 2, 3]); } });
+    assert.deepEqual([...(await v.pcm('alo'))], [1, 2, 3]);
+  } finally { await fake.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('edgeVoiceId falls back to Hoài My for an unknown voice', () => {
+  assert.equal(edgeVoiceId('vi-VN-NamMinhNeural'), 'vi-VN-NamMinhNeural');
+  assert.equal(edgeVoiceId('nope'), 'vi-VN-HoaiMyNeural');
+  assert.equal(edgeVoiceId(''), 'vi-VN-HoaiMyNeural');
+});
+
+// End to end (v7.6): a real server in test mode, Edge as the voice, a stub brain —
+// a chat line comes back spoken: the room line carries an /audio/ URL that serves.
+test('Edge voice end to end: a chat reply comes back with audio the page can play', async () => {
+  const { start } = await import('../server/index.mjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lh-edge-e2e-'));
+  const fake = fakeEdge({ onSsml: (ws, s) => { const id = edgeId(s); ws.send(edgeAudio(id, 6000)); ws.send(edgeEnd(id)); } });
+  const stub = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'A, hi đấy mà!' } }] })); });
+  });
+  await new Promise(r => stub.listen(0, '127.0.0.1', r));
+  const stubPort = stub.address().port;
+  const app = await start({ IDOL: 'viet', MODE: 'test', DATA_DIR: dir, AVATAR: 'mock', VOICE_PROVIDER: 'edge', EDGE_TTS_URL: fake.url() });
+  await new Promise(r => app.server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  try {
+    let r = await fetch(`${base}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'custom', keys: { custom: 'test-key' }, bases: { custom: `http://127.0.0.1:${stubPort}` }, models: { custom: 'test-model' } }) });
+    assert.equal(r.status, 200);
+    // one viewer on the stream, or the line stays silent
+    const stream = await fetch(`${base}/api/stream`);
+    assert.equal(stream.status, 200);
+    r = await fetch(`${base}/api/guest`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'kakap' }) });
+    const { token } = await r.json();
+    r = await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, text: 'hi' }) });
+    assert.equal(r.status, 200);
+    let audio = null, seen = '';
+    for (let i = 0; i < 60 && !audio; i++) {
+      await new Promise(r => setTimeout(r, 250));
+      const st = await (await fetch(`${base}/api/state`)).json();
+      seen = st.line?.text || seen;
+      if (st.line?.audio && (st.line.text || '').includes('hi đấy')) audio = st.line.audio;
+    }
+    assert.ok(audio, `no spoken chat reply (last line: ${seen})`);
+    assert.match(audio, /^\/audio\/[0-9a-f]+\.mp3$/);
+    r = await fetch(`${base}${audio}`);
+    assert.equal(r.status, 200);
+    assert.equal((await r.arrayBuffer()).byteLength, 6000);
+    await stream.body.cancel();
+  } finally {
+    await app.shutdown();
+    stub.close();
+    await fake.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

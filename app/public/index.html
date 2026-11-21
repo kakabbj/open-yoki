@@ -89,8 +89,14 @@
       </div>
       <p class="set-note" id="setNote"></p>
       <h3 data-i18n="语音和画面">Voice and face</h3>
-      <label class="set-row"><span>Volc Key</span><input id="setVolcKey" type="password" autocomplete="off"></label>
-      <label class="set-row"><span data-i18n="配音 ID（Doubao）">Voice ID (Doubao)</span><input id="setVoiceId" autocomplete="off"></label>
+      <label class="set-row"><span data-i18n="配音">Voice</span><select id="setVoiceEngine">
+        <option value="edge" data-i18n="Edge（免费，不用 key）">Edge (free, no key)</option>
+        <option value="doubao" data-i18n="Doubao（克隆音）">Doubao (cloned voice)</option>
+        <option value="fal">fal MiniMax</option>
+      </select></label>
+      <label class="set-row" id="setEdgeVoiceRow"><span data-i18n="Edge 声音">Edge voice</span><select id="setEdgeVoice"></select></label>
+      <label class="set-row" id="setVolcKeyRow"><span>Volc Key</span><input id="setVolcKey" type="password" autocomplete="off"></label>
+      <label class="set-row" id="setVoiceIdRow"><span data-i18n="配音 ID（Doubao）">Voice ID (Doubao)</span><input id="setVoiceId" autocomplete="off"></label>
       <label class="set-row"><span>Vidu Key</span><input id="setViduKey" type="password" autocomplete="off"></label>
       <p class="set-note" data-i18n="语音和画面在重启服务器后生效">Voice and face apply after the server restarts</p>
       <!-- Live push (v5): RTMP address + stream key per platform, so the show really goes out. -->

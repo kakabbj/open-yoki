@@ -51,6 +51,21 @@ test('key store: env is the fallback, a saved key wins; bad input is refused', (
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('key store: voice engine and Edge voice round-trip, bad values rejected', () => {
+  const dir = tmp(), file = path.join(dir, 'keys.json');
+  const store = createKeyStore({ file, env: {} });
+  assert.equal(store.voiceKeys().engine, null);
+  assert.equal(store.voiceKeys().edgeVoice, null);
+  store.save({ voice: { engine: 'doubao', edgeVoice: 'vi-VN-NamMinhNeural' } });
+  assert.equal(store.voiceKeys().engine, 'doubao');
+  assert.equal(store.voiceKeys().edgeVoice, 'vi-VN-NamMinhNeural');
+  assert.equal(store.status().voice.engine, 'doubao');
+  assert.deepEqual(store.status().voice.edgeVoices.map(v => v.id), ['vi-VN-HoaiMyNeural', 'vi-VN-NamMinhNeural']);
+  assert.throws(() => store.save({ voice: { engine: 'nope' } }), /bad settings/);
+  assert.throws(() => store.save({ voice: { edgeVoice: 'en-US-JennyNeural' } }), /bad settings/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('key store: voice keys come from settings first, env second', () => {
   const dir = tmp(), file = path.join(dir, 'keys.json');
   const store = createKeyStore({ file, env: { VOLC_API_KEY: 'volc-env', DOUBAO_VOICE_ID: 'S_1' } });

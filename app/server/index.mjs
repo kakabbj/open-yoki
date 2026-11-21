@@ -30,7 +30,7 @@ import { createTown, townAllowed } from './town.mjs';
 import { createRelay } from './relay.mjs';
 import { createVolcRoom } from './rtc.mjs';
 import { createSchedule, clockIn, showCue } from './schedule.mjs';
-import { falVoice, doubaoVoice, plainText, saidPart, VOICE, doubaoResource } from './voice.mjs';
+import { falVoice, doubaoVoice, edgeVoice, edgeVoiceId, plainText, saidPart, VOICE, doubaoResource } from './voice.mjs';
 import { createAuth, AuthError, isGuest } from './auth.mjs';
 import { liveRoom, watchGate } from './live.mjs';
 import { createMemory } from './memory.mjs';
@@ -127,14 +127,21 @@ export async function start(env = process.env) {
   const refreshModelRoute = () => { routes.model.on = !!keyStore.brain() && env.MODEL_OFF !== '1'; };
   refreshModelRoute();
   const falKey = env.FAL_KEY || null;
-  // Voice: her Doubao voice when its key and voice id are there, else fal MiniMax as the fallback.
+  // Voice: Edge TTS (free, no key — the voice T Review dubs with) unless the panel or
+  // env picks Doubao (the cloned voice, needs its key + voice id) or fal (needs FAL_KEY).
+  // A picked engine without its key falls back to Edge instead of going silent.
   const volcKey = env.VOLC_API_KEY || null;
   const dv = idol.avatar.doubao ? { ...idol.avatar.doubao, voiceId: env.DOUBAO_VOICE_ID || idol.avatar.doubao.voiceId } : null;
-  const useDoubao = !!(volcKey && dv?.voiceId && env.VOICE_PROVIDER !== 'fal');
-  routes.voice.on = (useDoubao || !!falKey) && env.VOICE_OFF !== '1';
+  let voiceEngine = env.VOICE_PROVIDER || vk.engine || (volcKey && dv?.voiceId ? 'doubao' : falKey ? 'fal' : 'edge');
+  if (voiceEngine === 'doubao' && !(volcKey && dv?.voiceId)) voiceEngine = 'edge';
+  if (voiceEngine === 'fal' && !falKey) voiceEngine = 'edge';
+  const useDoubao = voiceEngine === 'doubao';
+  const useEdge = voiceEngine === 'edge';
+  routes.voice.on = env.VOICE_OFF !== '1';
   const voiceDir = path.join(dataDir, 'audio'), dailyChars = Number(env.TTS_DAILY_CHARS || 60000);
   const stageVoice = !routes.voice.on ? null
     : useDoubao ? doubaoVoice({ key: volcKey, dir: voiceDir, dailyChars, voiceId: dv.voiceId, context: dv.context, speed: dv.speed || 0, tones: dv.tones || {}, status })
+    : useEdge ? edgeVoice({ dir: voiceDir, voiceId: edgeVoiceId(vk.edgeVoice || env.EDGE_VOICE || ''), wsUrl: env.EDGE_TTS_URL || undefined, status })
     : falVoice({ key: falKey, dir: voiceDir, dailyChars, voiceId: idol.fallbackVoice.voiceId, speed: idol.fallbackVoice.speed, status });
   const voice = stageVoice;
   // With a DeepSeek key the mouth talks to DeepSeek directly (thinking off, MOUTH_DS model) and reads a page of facts
@@ -718,7 +725,7 @@ export async function start(env = process.env) {
         radio: radio ? { wanted: radio.wanted(), on: radio.on, live: radio.live, answered: radio.answered, queue: radio.queue } : null,
         x: xClient ? { post: xClient.configured.user, read: xClient.configured.read, replies: !!xr } : null,
         heart: !!heart, onAir: schedule.info(),
-        voice: voice ? { model: voice.provider === 'doubao' ? doubaoResource(voice.voiceId) : VOICE.model, charsToday: voice.used, capChars: voice.dailyChars, ...(voice.provider === 'doubao' ? { rmbToday: +voice.rmb.toFixed(3) } : { usdToday: +voice.usd.toFixed(3) }) } : null,
+        voice: voice ? { model: voice.provider === 'doubao' ? doubaoResource(voice.voiceId) : voice.provider === 'edge' ? `edge-tts/${voice.voiceId}` : VOICE.model, charsToday: voice.used, capChars: voice.dailyChars, ...(voice.provider === 'doubao' ? { rmbToday: +voice.rmb.toFixed(3) } : voice.provider === 'edge' ? {} : { usdToday: +voice.usd.toFixed(3) }) } : null,
         modelSpend: { calls: brain.spend.calls, fails: brain.spend.fails, usd: +brain.spend.usd.toFixed(4) },
       }));
       // The settings panel (the operator, not the room): keys are only ever sent back

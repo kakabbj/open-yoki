@@ -4,6 +4,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import WebSocket from 'ws';
 
 export const VOICE = { model: 'fal-ai/minimax/speech-2.8-turbo', usdPerChar: 0.00006 };
 // fal's default 128 kbps / 32 kHz and no emotion setting: a 64 kbps copy and per-face emotions made the voice sound
@@ -197,6 +199,96 @@ export function doubaoVoice({ key, dir, dailyChars = 60000, voiceId, context = '
     return true;
   }
   return { say, pcm, pcmStream, warm, voiceId, tones: Object.keys(tones), provider: 'doubao', get used() { return used; }, dailyChars, get rmb() { return used * DOUBAO.rmbPerChar; } };
+}
+
+// Microsoft Edge TTS (the read-aloud service): the same free voice T Review dubs with
+// (vi-VN-HoaiMyNeural by default). No key, no account, no billing — the request goes to
+// Microsoft over WebSocket and the mp3 comes back 24 kHz / 48 kbps mono. Nothing is kept
+// warm between lines: one connection per line, closed at turn.end.
+export const EDGE_TTS_URL = 'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB9E31F416D75A5A43';
+export const EDGE_VOICES = [
+  { id: 'vi-VN-HoaiMyNeural', name: 'Hoài My (nữ)' },
+  { id: 'vi-VN-NamMinhNeural', name: 'Nam Minh (nam)' },
+];
+export const edgeVoiceId = id => EDGE_VOICES.some(v => v.id === id) ? id : EDGE_VOICES[0].id;
+
+export function edgeVoice({ dir, voiceId = EDGE_VOICES[0].id, rate = '+0%', pitch = '+0Hz', dailyChars = 1000000, wsImpl = WebSocket, wsUrl = EDGE_TTS_URL, execImpl = null, timeoutMs = 20000, tries = 2, now = () => Date.now(), keepFiles = 300, status }) {
+  fs.mkdirSync(dir, { recursive: true });
+  let day = '', used = 0;
+  const today = () => new Date(now() + 8 * 3600e3).toISOString().slice(0, 10);
+  const room = text => { if (today() !== day) { day = today(); used = 0; } return used + text.length <= dailyChars; };
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const ssml = text => `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="vi-VN"><voice name="${voiceId}"><prosody rate="${rate}" pitch="${pitch}">${esc(text)}</prosody></voice></speak>`;
+
+  // One request: speech.config, then the SSML. Audio arrives as binary frames whose
+  // header says Path:audio; Path:turn.end closes the turn. Resolves with the mp3 bytes.
+  function synth(text) {
+    return new Promise((resolve, reject) => {
+      const id = randomUUID();
+      const chunks = [];
+      let done = false;
+      const ws = new wsImpl(wsUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0' } });
+      const timer = setTimeout(() => fail(new Error('edge tts timeout')), timeoutMs);
+      const fail = err => { if (done) return; done = true; clearTimeout(timer); try { ws.close(); } catch {} reject(err); };
+      const finish = () => { if (done) return; done = true; clearTimeout(timer); try { ws.close(); } catch {} resolve(Buffer.concat(chunks)); };
+      ws.on('open', () => {
+        ws.send(`X-Timestamp:${new Date().toString()}\r\nContent-Type: application/json; charset=utf-8\r\nPath: speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"true"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`);
+        ws.send(`X-RequestId:${id}\r\nContent-Type: application/ssml+xml\r\nX-Timestamp:${new Date().toString()}\r\nPath: ssml\r\n\r\n${ssml(text)}`);
+      });
+      ws.on('message', data => {
+        const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+        const sep = buf.indexOf('\r\n\r\n');
+        if (sep < 0) return;
+        const head = buf.subarray(0, sep).toString('utf8');
+        if (/Path:\s*audio/.test(head)) chunks.push(buf.subarray(sep + 4));
+        else if (/Path:\s*turn\.end/.test(head)) finish();
+      });
+      ws.on('error', fail);
+      ws.on('close', () => { if (!done) fail(new Error('edge tts closed early')); });
+    });
+  }
+  // mp3 (48 kbps) to raw 24 kHz mono PCM for the Vidu component avatar, through ffmpeg.
+  const decode = execImpl || (buf => new Promise((resolve, reject) => {
+    const child = execFile('ffmpeg', ['-v', 'error', '-i', 'pipe:0', '-f', 's16le', '-ar', '24000', '-ac', '1', 'pipe:1'], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => err ? reject(err) : resolve(stdout));
+    child.stdin.on('error', () => {});
+    child.stdin.end(buf);
+  }));
+  function prune() {
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.mp3')).map(f => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t);
+    for (const { f } of files.slice(keepFiles)) fs.rmSync(path.join(dir, f), { force: true });
+  }
+  async function say(text, face, id) {
+    if (!room(text)) { status?.('voice', false, 'daily cap reached'); return null; }
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const buf = await synth(text);
+        if (!buf.length) throw new Error('edge tts no audio');
+        used += text.length; status?.('voice', true);
+        const file = `${id}.mp3`;
+        fs.writeFileSync(path.join(dir, file), buf);
+        prune();
+        return { url: `/audio/${file}`, durationMs: Math.round(buf.length / 6) };   // 48 kbps: 6 bytes per ms
+      } catch (err) {
+        if (attempt >= tries) { const why = String(err.message || err).slice(0, 120); status?.('voice', false, why); console.warn('voice failed: ' + why); return null; }
+      }
+    }
+  }
+  async function pcm(text) {
+    if (!room(text)) { status?.('voice', false, 'daily cap reached'); return null; }
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const buf = await synth(text);
+        if (!buf.length) throw new Error('edge tts no audio');
+        const out = await decode(buf);
+        used += text.length; status?.('voice', true);
+        return out;
+      } catch (err) {
+        if (attempt >= tries) { const why = String(err.message || err).slice(0, 120); status?.('voice', false, why); console.warn('voice failed: ' + why); return null; }
+      }
+    }
+  }
+  async function warm() { return false; }   // nothing to keep alive between lines
+  return { say, pcm, warm, voiceId, provider: 'edge', get used() { return used; }, dailyChars };
 }
 
 // A fetch response's body line by line as it arrives; a response without a readable body is read whole.
