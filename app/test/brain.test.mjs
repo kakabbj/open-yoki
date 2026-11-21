@@ -165,6 +165,8 @@ test('the Vietnamese thought line is never shown or read: same-line and bare-moo
   assert.equal(vi.text, 'Cãi nhau mà vẫn nhớ người kia ghét nho khô, Vy muốn nghe cả tiếng ghé kéo sất lại.');
   assert.equal(vi.feel, 'mềm lòng');
   assert.equal(parseReply(vietIdol, 'Sốt ruột | Cãi nhau mà vẫn nhớ người kia ghét nho khô, Vy muốn nghe cả tiếng ghé kéo sất lại.').text, 'Cãi nhau mà vẫn nhớ người kia ghét nho khô, Vy muốn nghe cả tiếng ghé kéo sất lại.');
+  // the no-colon, long-mood form ("Cảm xúc vui nhẹ" is 15 characters) is stripped too
+  assert.equal(parseReply(vietIdol, 'Cảm xúc vui nhẹ | Một bữa cơm vụng về cũng đủ thấy thương, anh nhặt rau mà mắt cứ ngó nồi cá.').text, 'Một bữa cơm vụng về cũng đủ thấy thương, anh nhặt rau mà mắt cứ ngó nồi cá.');
   // a real line that merely contains a pipe stays whole
   assert.equal(parseReply(vietIdol, 'Phim hay | xem tiếp đi').text, 'Phim hay | xem tiếp đi');
   // the Chinese thought line still works exactly as before

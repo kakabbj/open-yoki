@@ -306,10 +306,13 @@ export function fitLength(text, max = 300) {
 // voice tones adds a third tag, how the line is read: "[开心][无][吐槽]台词".
 export function parseReply(idol, raw) {
   let text = String(raw || '').trim().replace(/^["“]|["”]$/g, '');
-  // The model sometimes opens with a bare mood and a pipe — "Sốt ruột | <speech>"
-  // — no colon, so takeInner's thought line does not catch it. Drop the mood,
-  // keep the speech. Vietnamese only, and only when the rest is a real line.
-  if (idol.lang === 'vi') text = text.replace(/^\s*[^|\n\[【:：]{1,12}\|\s*(?=[\s\S]{20,})/, '');
+  // The model sometimes opens with a thought and a pipe — "Cảm nhận: mềm lòng |
+  // <speech>", "Cảm xúc vui nhẹ | <speech>", "Sốt ruột | <speech>" — no colon
+  // in the second form, and the mood itself can run long ("Cảm xúc vui nhẹ" is
+  // 15 characters), so takeInner's colon form does not catch it. Drop the
+  // thought, keep the speech. Vietnamese only, and only when the rest is a
+  // real line (a sentence never starts with one of these labels + a pipe).
+  if (idol.lang === 'vi') text = text.replace(/^\s*(?:(?:Cảm xúc|Cảm nhận|Nghĩ|Tâm trạng|Tâm tình)[^|\n\[【]{0,24}|[^|\n\[【:：]{1,12})\|\s*(?=[\s\S]{20,})/, '');
   let face = 'neutral', action = null, tone = null;
   const tones = tonesOf(idol);
   // Tags may be Vietnamese ([Nghiêng đầu][Nhiệt tình]) — the host answers in Vietnamese,

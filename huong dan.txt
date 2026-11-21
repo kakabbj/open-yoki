@@ -1,5 +1,24 @@
-HUONG DAN - OPEN LIVESTREAM v7.9.4
+HUONG DAN - OPEN LIVESTREAM v7.9.5
 ==============================
+
+v7.9.5 BO NOT TIEN TO "CAM XUC VUI NHE |" (KHONG DAU HAI CHAM):
+Ban v7.9.4 chi cat dang co dau hai cham ("Cam nhan: ... |").
+Model con viet dang khong dau hai cham, tam trang dai ("Cam xuc
+vui nhe | ...", 15 ky tu) nen van lot len phu de va van doc het.
+v7.9.5 cat ca dang nay (va "Sot ruot | ..."). Chi hien/doc phan
+sau dau |.
+
+v7.9.5 GIONG NGOC HUYEN CHI NOI KHI SIDECAR DANG CHAY — KIEM TRA
+NHANH: mo trinh duyet, go http://127.0.0.1:8771/health — neu
+hien {"ok":true,"loaded":true} la sidecar dang chay, chon giong
+VieNeu trong Cai dat la noi. Neu trang khong mo duoc, sidecar
+chua chay: mo T Review, vao muc giong, chon Ngoc Huyen roi bam
+"Nghe thu" 1 lan (T Review tu bat sidecar + nap model, lan dau
+mat vai phut). Sidecar chay xong thi cu de do, mo lai live la
+dung duoc. Neu T Review bao chua tai goi giong VieNeu thi tai
+goi ve truoc roi moi "Nghe thu". Cua so den live ma thay dong
+"voice failed: vieneu sidecar unreachable" nghia la sidecar
+chua chay — luc do phong tu dung giong Google thay the.
 
 v7.9.4 GIONG NGOC HUYEN (OFFLINE) + SUA "LUC DOC LUC KHONG" + BO TIEN TO "CAM NHAN: ... |":
 1. LUC DOC LUC KHONG LA SAO: giong Google du phong bi Google chan
